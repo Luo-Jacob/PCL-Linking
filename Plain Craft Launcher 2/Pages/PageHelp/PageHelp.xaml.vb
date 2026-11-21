@@ -80,7 +80,7 @@ Public Class PageHelp
                     "② 外置登录：在启动页切到外置登录填写皮肤站首页或 Yggdrasil API 地址，也可以把皮肤站提供的 Authlib-Injector 链接直接拖到启动器里。",
                     "③ 版本独立覆盖：如果某个整合包服务器需要单独的皮肤站，在对应实例的「版本设置 → 设置」里可以单独指定登录方式，不用反复改全局。"
                 },
-                .Tip = "配置多个离线账号后，还能在「工具 → 全局快捷键」里录一个快捷键用来轮换账号。",
+                .Tip = "配置多个离线账号后，还能在「百宝箱 → 全局快捷键」里录一个快捷键用来轮换账号。",
                 .ActionText = "回到启动页",
                 .ActionCallback = Sub() FrmMain.PageChange(FormMain.PageType.Launch),
                 .SecondaryActionText = "设置自定义皮肤",
@@ -217,7 +217,7 @@ Public Class PageHelp
                     "② 用顶部的 ‹ / › 可以在好友和群聊之间切换，在底部输入框按 Enter 就能直接发消息；遇到联机邀请卡片直接点按钮就能接。",
                     "③ 点右上角「无边框」按钮可以把运行中的 Minecraft 窗口铺满当前显示器并且去掉标题栏，再点一次恢复原窗口位置和大小。"
                 },
-                .Tip = "建议在「工具 → 全局快捷键」绑个顺手的键来随时呼出/收起浮窗或切无边框，配合游戏设置里的「窗口化」切屏完全不黑屏。",
+                .Tip = "建议在「百宝箱 → 全局快捷键」绑个顺手的键来随时呼出/收起浮窗或切无边框，配合游戏设置里的「窗口化」切屏完全不黑屏。",
                 .ActionText = "呼出浮层看看",
                 .ActionCallback = Sub() WinInGameOverlay.ToggleOverlay(),
                 .SecondaryActionText = "去绑快捷键",
@@ -229,7 +229,7 @@ Public Class PageHelp
                 .Badge = "6 种核心",
                 .Summary = "自带 Paper、Purpur、Vanilla、Fabric、NeoForge、Forge 一键建服和管理，不需要改路由器端口映射，开好服直接一键拉起 EasyTier 房间就能让朋友进。",
                 .Steps = {
-                    "① 打开「工具 → 服务器生成/管理」，目录留空的话点生成会自动建在同级的 PCL Linking\\Servers\\核心-版本\\ 下；该目录下已有的服务端也会自动扫描放进上方下拉列表。",
+                    "① 打开「百宝箱 → 服务器生成/管理」，目录留空的话点生成会自动建在同级的 PCL Linking\\Servers\\核心-版本\\ 下；该目录下已有的服务端也会自动扫描放进上方下拉列表。",
                     "② 配置好核心、MC 版本、Java，下面填好端口（默认 25565）、最大人数、MOTD、游戏模式、正版验证开关和分配内存。",
                     "③ 先点生成再点「启动服务端」，控制台跑起来之后点「一键共享到联机房间」，就会自动拿当前服务端端口建好房间。"
                 },
@@ -260,7 +260,7 @@ Public Class PageHelp
                 .Badge = "SLP 1.7+",
                 .Summary = "不进游戏就能用原生 TCP 直连测任何服务器的在线人数、延迟 RTT、服务端版本、MOTD 和在线玩家样本，支持本地开服和当前 EasyTier 地址快速填入。",
                 .Steps = {
-                    "① 进入「工具 → 服务器状态探测」，手动填 IP:端口，或者直接点快捷按钮填入本地开服地址 / 当前已加入的 EasyTier 虚网联机地址。",
+                    "① 进入「百宝箱 → 服务器状态探测」，手动填 IP:端口，或者直接点快捷按钮填入本地开服地址 / 当前已加入的 EasyTier 虚网联机地址。",
                     "② 点「立即探测」看延迟和玩家数；常用服务器可以「加入关注列表」，以后进页面点一下「全部刷新」就能挨个巡检一遍。",
                     "③ 测通之后可以直接点「写入当前实例服务器列表 (servers.dat)」或者「用当前实例直连启动」进服。"
                 },
@@ -391,18 +391,19 @@ Public Class PageHelp
             },
             New HelpTopic With {
                 .Category = "实例定制",
-                .Title = "23. 3D 皮肤预览器与多资源包无冲突合并",
-                .Badge = "实用工具",
-                .Summary = "工具页内置支持滚轮缩放旋转的 3D 皮肤/披风预览器，以及可以按顺序合并多个材质包并排查文件覆盖冲突的合并工具。",
+                .Title = "23. 百宝箱实用工具、3D 皮肤头像导出与资源包合并",
+                .Badge = "百宝箱",
+                .Summary = "「百宝箱」把日常快捷小工具、自定义下载、Minecraft 成就图标生成、3D 皮肤预览与头像导出、多资源包合并整合在同一栏里，使用更顺手。",
                 .Steps = {
-                    "① 3D 皮肤预览器：在「工具 → 皮肤 3D 预览」直接读取本地 PNG、当前账号皮肤或按正版玩家名在线拉取，支持切细臂 (Alex) 模型、看披风/鞘翅和导出 PNG。",
-                    "② 多资源包合并：在「工具 → 资源包合并」往里加多个 .zip 或文件夹，排好上下叠加顺序；如果有同名贴图/模型冲突，列表里可直接点选保留哪一份，最后一键合成单个新资源包。"
+                    "① 百宝箱首页：提供「清理垃圾」（只清理临时缓存与 7 天前旧日志）、今日人品、桌面快捷方式生成、自定义链接下载与 Minecraft 成就图标 PNG 生成。",
+                    "② 3D 皮肤预览与头像导出：在「百宝箱 → 皮肤 3D 预览」直接读取本地 PNG、当前账号皮肤或按正版玩家名在线拉取，支持切细臂 (Alex) 模型、看披风/鞘翅，以及导出 3D 截图或 64×64 / 96×96 / 128×128 像素头像 PNG。",
+                    "③ 多资源包合并：在「百宝箱 → 资源包合并」往里加多个 .zip 或文件夹，排好上下叠加顺序；如果有同名贴图/模型冲突，列表里可直接点选保留哪一份，最后一键合成单个新资源包。"
                 },
-                .Tip = "合并好后可直接放进游戏实例的 resourcepacks 文件夹生效。",
-                .ActionText = "打开「皮肤 3D 预览」",
-                .ActionCallback = Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsSkin3D),
-                .SecondaryActionText = "打开「资源包合并」",
-                .SecondaryCallback = Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsResourceMerge)
+                .Tip = "合并好的资源包可直接放进游戏实例的 resourcepacks 文件夹生效；遇到使用疑问也能直接在百宝箱侧边栏切到「使用帮助」或「反馈与日志」。",
+                .ActionText = "打开「百宝箱」",
+                .ActionCallback = Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsToolbox),
+                .SecondaryActionText = "打开「皮肤 3D 预览」",
+                .SecondaryCallback = Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsSkin3D)
             },
             New HelpTopic With {
                 .Category = "常见排查",
@@ -426,11 +427,11 @@ Public Class PageHelp
                 .Badge = "17 种动作 / 排错",
                 .Summary = "整理了 17 个全局快捷键绑定动作，以及遇到联机慢、黑屏进不去游戏、加载报错时的常见处理顺序。",
                 .Steps = {
-                    "① 全局快捷键：打开「工具 → 全局快捷键」，可给「快速启动选中实例」「打开最新日志」「打开游戏目录」「轮换离线账号」「显示/最小化启动器」「切换游戏内消息浮窗」「切换运行中游戏无边框」「直跳各大功能页」共 17 个动作录制组合键（默认全空不抢热键）。",
+                    "① 全局快捷键：打开「百宝箱 → 全局快捷键」，可给「快速启动选中实例」「打开最新日志」「打开游戏目录」「轮换离线账号」「显示/最小化启动器」「切换游戏内消息浮窗」「切换运行中游戏无边框」「直跳各大功能页」共 17 个动作录制组合键（默认全空不抢热键）。",
                     "② 联机老走中继或高延迟：房主和好友都点一遍「联机 → 节点测速与择优」挑同样的低延迟前 3 节点，顺手让 Windows 防火墙放行 PCLLK.exe。",
                     "③ 启动秒退或报错：先点 Mod 管理「冲突与依赖体检」清掉错放/缺前置项；再看实时日志「一键智能诊断」提示；改动前有打快照的话可以直接回滚。"
                 },
-                .Tip = "如果需要按窗口聚焦限制热键，可以在「工具 → 全局快捷键」勾上「仅在 PCL Linking 窗口聚焦时响应」。",
+                .Tip = "如果需要按窗口聚焦限制热键，可以在「百宝箱 → 全局快捷键」勾上「仅在 PCL Linking 窗口聚焦时响应」。",
                 .ActionText = "配置「全局快捷键」",
                 .ActionCallback = Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsHotkeys),
                 .SecondaryActionText = "打开「关于」查看说明",

@@ -20,16 +20,141 @@ Public Module ModExtra
     Public Sub MemoryOptimizeInternal(ShowHint As Boolean)
     End Sub
 
+    Public Function ComputeDailyLuck() As (Score As Integer, Label As String, Advice As String)
+        Dim Seed = $"{Date.Today:yyyy-MM-dd}|{Environment.UserName}|{Environment.MachineName}|PCL-Linking-JRRP"
+        Dim Score As Integer
+        Using Sha = Security.Cryptography.SHA256.Create()
+            Dim Hash = Sha.ComputeHash(Text.Encoding.UTF8.GetBytes(Seed))
+            Dim Raw = BitConverter.ToUInt32(Hash, 0)
+            Score = CInt(Raw Mod 101UI)
+        End Using
+        Dim Label As String
+        Dim Advice As String
+        If Score = 100 Then
+            Label = "百中无一 · 欧皇附体"
+            Advice = "今天挖矿一铲三颗钻，整合包一次过！"
+        ElseIf Score >= 85 Then
+            Label = "大吉"
+            Advice = "适合联机开荒和抽附魔，手感拉满。"
+        ElseIf Score >= 60 Then
+            Label = "中吉"
+            Advice = "诸事顺利，放心折腾 Mod 与光影。"
+        ElseIf Score >= 35 Then
+            Label = "小平"
+            Advice = "稳扎稳打，大改配置前先随手拍个快照。"
+        ElseIf Score > 0 Then
+            Label = "略坎坷"
+            Advice = "下矿多带两组火把，进末地前记得垫方块。"
+        Else
+            Label = "零分纪念 · 物极必反"
+            Advice = "能恰好抽到 0 分本身也是一种稀有限定运气！"
+        End If
+        Return (Score, Label, Advice)
+    End Function
+
     Public Sub Jrrp()
-        Hint("PCL Linking 不包含这个功能。")
+        Dim Res = ComputeDailyLuck()
+        Hint($"今日人品：{Res.Score} —— {Res.Label}（{Res.Advice}）", If(Res.Score >= 60, HintType.Green, HintType.Blue))
     End Sub
 
+    Public Function RubbishClearInteractive() As String
+        Dim Targets As New List(Of String)
+        Dim TotalBytes As Long = 0
+
+        Dim CollectDirFiles As Action(Of String, Func(Of IO.FileInfo, Boolean)) =
+        Sub(DirPath As String, Predicate As Func(Of IO.FileInfo, Boolean))
+            If String.IsNullOrWhiteSpace(DirPath) OrElse Not IO.Directory.Exists(DirPath) Then Return
+            Try
+                For Each FilePath In IO.Directory.EnumerateFiles(DirPath, "*", IO.SearchOption.AllDirectories)
+                    Try
+                        Dim Fi As New IO.FileInfo(FilePath)
+                        If Predicate Is Nothing OrElse Predicate(Fi) Then
+                            Targets.Add(FilePath)
+                            TotalBytes += Fi.Length
+                        End If
+                    Catch
+                    End Try
+                Next
+            Catch
+            End Try
+        End Sub
+
+        Dim DataDir = IO.Path.Combine(Paths.Base, "PCL Linking")
+        CollectDirFiles(IO.Path.Combine(DataDir, "Temp"), Nothing)
+        CollectDirFiles(IO.Path.Combine(DataDir, "Cache"), Nothing)
+        If Not String.IsNullOrWhiteSpace(PathTemp) AndAlso IO.Directory.Exists(PathTemp) Then
+            Dim TempNorm = IO.Path.GetFullPath(PathTemp).TrimEnd("\"c)
+            Dim DataTempNorm = IO.Path.GetFullPath(IO.Path.Combine(DataDir, "Temp")).TrimEnd("\"c)
+            If Not String.Equals(TempNorm, DataTempNorm, StringComparison.OrdinalIgnoreCase) Then
+                CollectDirFiles(PathTemp, Nothing)
+            End If
+        End If
+        For I As Integer = 2 To 5
+            Dim OldLog = IO.Path.Combine(DataDir, $"Log{I}.txt")
+            If IO.File.Exists(OldLog) Then
+                Try
+                    Targets.Add(OldLog)
+                    TotalBytes += New IO.FileInfo(OldLog).Length
+                Catch
+                End Try
+            End If
+        Next
+        If Not String.IsNullOrWhiteSpace(McFolderSelected) AndAlso IO.Directory.Exists(McFolderSelected) Then
+            Dim CutoffUtc = DateTime.UtcNow.AddDays(-7)
+            CollectDirFiles(McFolderSelected,
+                Function(fi)
+                    Dim Ext = fi.Extension.ToLowerInvariant()
+                    Dim DirLow = If(fi.DirectoryName, "").ToLowerInvariant()
+                    If Ext = ".tmp" OrElse Ext = ".lmltmp" OrElse Ext = ".pcltmp" Then Return True
+                    If Ext = ".gz" AndAlso DirLow.EndsWith("\logs") AndAlso fi.LastWriteTimeUtc < CutoffUtc Then Return True
+                    If Ext = ".txt" AndAlso DirLow.EndsWith("\crash-reports") AndAlso fi.LastWriteTimeUtc < CutoffUtc Then Return True
+                    Return False
+                End Function)
+        End If
+
+        Targets = Targets.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        If Targets.Count = 0 Then
+            RunInUi(Sub() Hint("当前没有需要清理的缓存、临时文件或旧日志。", HintType.Green))
+            Return "未发现可清理的缓存、临时文件或旧日志。"
+        End If
+
+        Dim Confirmed As Integer = 0
+        RunInUiWait(
+        Sub()
+            Confirmed = MyMsgBox($"共扫描到 {Targets.Count} 个可安全清理的临时文件与旧日志归档，合计约 {TotalBytes / 1048576.0:0.2} MB。{vbCrLf}不会触碰游戏存档、Mod、账号与配置文件，是否立即清理？",
+                                 "清理垃圾确认", "立即清理", "取消")
+        End Sub)
+        If Confirmed <> 1 Then
+            Return $"已取消清理（待清理 {Targets.Count} 项，约 {TotalBytes / 1048576.0:0.2} MB）。"
+        End If
+
+        Dim DeletedCount As Integer = 0
+        Dim FreedBytes As Long = 0
+        For Each PathItem In Targets
+            Try
+                Dim Sz = New IO.FileInfo(PathItem).Length
+                IO.File.Delete(PathItem)
+                DeletedCount += 1
+                FreedBytes += Sz
+            Catch
+            End Try
+        Next
+        Dim ResultText = $"已清理 {DeletedCount} 个文件，释放 {FreedBytes / 1048576.0:0.2} MB 空间。"
+        RunInUi(Sub() Hint(ResultText, HintType.Green))
+        Return ResultText
+    End Function
+
     Public Sub RubbishClear()
-        Hint("PCL Linking 不包含这个功能。")
+        RubbishClearInteractive()
     End Sub
 
     Public Sub StartCustomDownload(Url As String, FileName As String, Optional Folder As String = Nothing)
-        Hint("PCL Linking 不包含内置下载工具，请手动下载：" & FileName)
+        RunInUi(
+        Sub()
+            FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsToolbox)
+            FrmToolsToolbox?.PrefillCustomDownload(Url, FileName, Folder)
+            Hint("已切换到「百宝箱 → 自定义下载」，确认参数后点击开始下载即可。", HintType.Blue)
+        End Sub)
     End Sub
 
     ''' <summary>

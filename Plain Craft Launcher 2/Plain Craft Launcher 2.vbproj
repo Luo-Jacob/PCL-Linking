@@ -361,6 +361,9 @@
     <Compile Include="Pages\PageSetup\PageSetupLeft.xaml.vb">
       <DependentUpon>PageSetupLeft.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageTools\PageToolsToolbox.xaml.vb">
+      <DependentUpon>PageToolsToolbox.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Pages\PageTools\PageToolsHotkeys.xaml.vb">
       <DependentUpon>PageToolsHotkeys.xaml</DependentUpon>
     </Compile>
@@ -594,6 +597,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Pages\PageSetup\PageSetupLeft.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Pages\PageTools\PageToolsToolbox.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

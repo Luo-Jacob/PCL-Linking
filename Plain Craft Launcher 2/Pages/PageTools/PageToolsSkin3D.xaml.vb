@@ -792,4 +792,54 @@ Public Class PageToolsSkin3D
         End Try
     End Sub
 
+    Private Sub BtnExportAvatar_Click() Handles BtnExportAvatar.Click
+        If CurrentSkinBitmap Is Nothing Then
+            Hint("请先加载皮肤后再导出头像！", HintType.Red)
+            Return
+        End If
+        Dim SizeItem = TryCast(ComboAvatarSize.SelectedItem, MyComboBoxItem)
+        Dim TargetPx As Integer = Math.Max(64, CInt(Val(If(SizeItem?.Tag?.ToString(), "64"))))
+        Dim OutPath = Dialogs.SaveFile("导出 Minecraft 皮肤头像", $"avatar-{TargetPx}x{TargetPx}-{DateTime.Now:yyyyMMdd-HHmmss}.png", filter:={("png", "PNG 图片 (*.png)")})
+        If String.IsNullOrEmpty(OutPath) Then Return
+        Try
+            Dim Stride8 As Integer = 8 * 4
+            Dim BaseBuf(Stride8 * 8 - 1) As Byte
+            Dim FaceCrop As New CroppedBitmap(CurrentSkinBitmap, New Int32Rect(8, 8, 8, 8))
+            FaceCrop.CopyPixels(BaseBuf, Stride8, 0)
+
+            If ChkShowOuterLayer.Checked AndAlso Not IsLegacy64x32 AndAlso CurrentSkinBitmap.PixelWidth >= 48 AndAlso CurrentSkinBitmap.PixelHeight >= 16 Then
+                Dim HatBuf(Stride8 * 8 - 1) As Byte
+                Dim HatCrop As New CroppedBitmap(CurrentSkinBitmap, New Int32Rect(40, 8, 8, 8))
+                HatCrop.CopyPixels(HatBuf, Stride8, 0)
+                For i As Integer = 0 To BaseBuf.Length - 4 Step 4
+                    Dim Sa As Integer = HatBuf(i + 3)
+                    If Sa = 0 Then Continue For
+                    If Sa = 255 Then
+                        BaseBuf(i) = HatBuf(i)
+                        BaseBuf(i + 1) = HatBuf(i + 1)
+                        BaseBuf(i + 2) = HatBuf(i + 2)
+                        BaseBuf(i + 3) = 255
+                    Else
+                        Dim InvA As Integer = 255 - Sa
+                        BaseBuf(i) = CByte((HatBuf(i) * Sa + BaseBuf(i) * InvA) \ 255)
+                        BaseBuf(i + 1) = CByte((HatBuf(i + 1) * Sa + BaseBuf(i + 1) * InvA) \ 255)
+                        BaseBuf(i + 2) = CByte((HatBuf(i + 2) * Sa + BaseBuf(i + 2) * InvA) \ 255)
+                        BaseBuf(i + 3) = CByte(Math.Min(255, Sa + (BaseBuf(i + 3) * InvA) \ 255))
+                    End If
+                Next
+            End If
+
+            Dim Head8 = BitmapSource.Create(8, 8, 96, 96, PixelFormats.Bgra32, Nothing, BaseBuf, Stride8)
+            Dim Scaled = ScalePixelArtNearest(Head8, Math.Max(1, TargetPx \ 8))
+            Dim Enc As New PngBitmapEncoder()
+            Enc.Frames.Add(BitmapFrame.Create(Scaled))
+            Using Fs As New FileStream(OutPath, FileMode.Create)
+                Enc.Save(Fs)
+            End Using
+            Hint($"已导出 {TargetPx}×{TargetPx} 皮肤头像：{Path.GetFileName(OutPath)}", HintType.Green)
+        Catch ex As Exception
+            Hint($"导出头像失败：{ex.Message}", HintType.Red)
+        End Try
+    End Sub
+
 End Class

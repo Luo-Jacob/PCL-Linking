@@ -400,6 +400,7 @@ EndHint:
     Public FrmInstanceSnapshot As PageInstanceSnapshot
     Public FrmInstanceAssets As PageInstanceAssets
     Public FrmToolsLeft As PageToolsLeft
+    Public FrmToolsToolbox As PageToolsToolbox
     Public FrmToolsSkin3D As PageToolsSkin3D
     Public FrmToolsServer As PageToolsServer
     Public FrmToolsHotkeys As PageToolsHotkeys
@@ -544,7 +545,7 @@ EndHint:
             CustomEventService.SetEventType(Item, CustomEvent.EventType.None) '清空自定义事件属性，它们会被下面的点击事件处理
             CustomEventService.SetEventData(Item, Nothing)
             '项目的点击事件
-            AddHandler Item.Click, Sub(sender, e) RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.Help))
+            AddHandler Item.Click, Sub(sender, e) RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsHelp))
             Return Item
         End Function
 

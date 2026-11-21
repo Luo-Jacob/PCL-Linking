@@ -959,11 +959,11 @@ Public Class FormMain
         ''' </summary>
         Friends = 4
         ''' <summary>
-        ''' 实用工具箱。
+        ''' 百宝箱。
         ''' </summary>
         Tools = 5
         ''' <summary>
-        ''' 使用帮助与功能指南。
+        ''' 使用帮助与功能指南（已并入百宝箱，保留枚举值以兼容旧入口）。
         ''' </summary>
         Help = 6
         ''' <summary>
@@ -1012,11 +1012,13 @@ Public Class FormMain
         InstanceSaves = 6
         InstanceSnapshot = 7
         InstanceAssets = 8
-        ToolsHotkeys = 0
-        ToolsServer = 1
-        ToolsSkin3D = 2
-        ToolsResourceMerge = 3
-        ToolsServerPing = 4
+        ToolsToolbox = 0
+        ToolsHotkeys = 1
+        ToolsServer = 2
+        ToolsSkin3D = 3
+        ToolsResourceMerge = 4
+        ToolsServerPing = 5
+        ToolsHelp = 6
     End Enum
     ''' <summary>
     ''' 获取次级页面的名称。若并非次级页面则返回空字符串，故可以以此判断是否为次级页面。
@@ -1072,7 +1074,7 @@ Public Class FormMain
                 Case PageType.Setup
                     If FrmSetupLeft Is Nothing Then FrmSetupLeft = New PageSetupLeft
                     Return FrmSetupLeft.PageID
-                Case PageType.Tools
+                Case PageType.Tools, PageType.Help
                     If FrmToolsLeft Is Nothing Then FrmToolsLeft = New PageToolsLeft
                     Return FrmToolsLeft.PageID
                 Case Else
@@ -1127,6 +1129,10 @@ Public Class FormMain
     ''' 切换页面，并引起对应选择 UI 的改变。
     ''' </summary>
     Public Sub PageChange(Stack As PageStackData, Optional SubType As PageSubType = PageSubType.Default)
+        If Stack.Page = PageType.Help Then
+            Stack = PageType.Tools
+            SubType = PageSubType.ToolsHelp
+        End If
         If PageNameGet(Stack) = "" Then
             '切换到主页面
             PageChangeExit()
@@ -1159,7 +1165,7 @@ Public Class FormMain
     ''' <summary>
     ''' 通过点击导航栏改变页面。
     ''' </summary>
-    Private Sub BtnTitleSelect_Click(sender As MyRadioButton, raiseByMouse As Boolean) Handles BtnTitleSelect0.Check, BtnTitleSelect1.Check, BtnTitleSelect2.Check, BtnTitleSelect3.Check, BtnTitleSelect4.Check, BtnTitleSelect5.Check, BtnTitleSelect6.Check
+    Private Sub BtnTitleSelect_Click(sender As MyRadioButton, raiseByMouse As Boolean) Handles BtnTitleSelect0.Check, BtnTitleSelect1.Check, BtnTitleSelect2.Check, BtnTitleSelect3.Check, BtnTitleSelect4.Check, BtnTitleSelect5.Check
         If IsChangingPage Then Return
         PageChangeActual(Val(sender.Tag))
     End Sub
@@ -1244,12 +1250,12 @@ Public Class FormMain
                 Case PageType.Friends '好友与私信
                     If FrmFriends Is Nothing Then FrmFriends = New PageFriends
                     PageChangeAnim(New MyPageLeft, FrmFriends)
-                Case PageType.Tools '工具箱
+                Case PageType.Tools '百宝箱
                     If FrmToolsLeft Is Nothing Then FrmToolsLeft = New PageToolsLeft
                     PageChangeAnim(FrmToolsLeft, FrmToolsLeft.PageGet(SubType))
-                Case PageType.Help '使用帮助
-                    If FrmHelp Is Nothing Then FrmHelp = New PageHelp
-                    PageChangeAnim(New MyPageLeft, FrmHelp)
+                Case PageType.Help '旧使用帮助入口兼容跳转
+                    If FrmToolsLeft Is Nothing Then FrmToolsLeft = New PageToolsLeft
+                    PageChangeAnim(FrmToolsLeft, FrmToolsLeft.PageGet(PageSubType.ToolsHelp))
                 Case PageType.Setup '设置
                     If FrmSetupLeft Is Nothing Then FrmSetupLeft = New PageSetupLeft
                     PageChangeAnim(FrmSetupLeft, FrmSetupLeft.PageGet(SubType))

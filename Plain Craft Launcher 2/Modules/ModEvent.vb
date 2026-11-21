@@ -204,7 +204,7 @@ Public Class CustomEvent
                             Logger.Info($"打开类自定义事件实际路径：{Location}，工作目录：{WorkingDir}")
                             '执行
                             If Type = EventType.打开帮助 Then
-                                RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.Help))
+                                RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsHelp))
                             Else
                                 If Not EventSafetyConfirm("即将执行：" & Location & If(Args.Length >= 2, " " & Arg1, "")) Then Return
                                 Dim Info As New ProcessStartInfo With {

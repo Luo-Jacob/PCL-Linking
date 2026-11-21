@@ -7,7 +7,7 @@ Imports Newtonsoft.Json
 
 ''' <summary>
 ''' 全局 / 窗口快捷键管理器（使用 Win32 RegisterHotKey / WM_HOTKEY，不注入全局键盘钩子）。
-''' 默认没有任何绑定，由用户在「工具 → 全局快捷键」按需添加。
+''' 默认没有任何绑定，由用户在「百宝箱 → 全局快捷键」按需添加。
 ''' </summary>
 Public Module ModHotkeys
 
@@ -120,15 +120,15 @@ Public Module ModHotkeys
             Case HotkeyActionId.NavLaunch : Return "跳转到「启动」页面"
             Case HotkeyActionId.NavDownload : Return "跳转到「下载」页面"
             Case HotkeyActionId.NavPresets : Return "跳转到「下载 → 常用模组清单」"
-            Case HotkeyActionId.NavTools : Return "跳转到「工具」页面"
+            Case HotkeyActionId.NavTools : Return "跳转到「百宝箱」页面"
             Case HotkeyActionId.NavSaves : Return "跳转到当前实例「世界存档管理」"
             Case HotkeyActionId.NavSnapshot : Return "跳转到当前实例「实例快照回滚」"
             Case HotkeyActionId.NavSetup : Return "跳转到「设置」页面"
             Case HotkeyActionId.NavFriends : Return "跳转到「好友」页面"
             Case HotkeyActionId.ToggleOverlay : Return "显示 / 隐藏游戏内好友消息浮窗"
-            Case HotkeyActionId.NavHelp : Return "跳转到「帮助」页面"
+            Case HotkeyActionId.NavHelp : Return "跳转到「百宝箱 → 使用帮助」"
             Case HotkeyActionId.ToggleBorderless : Return "切换运行中 Minecraft 无边框全屏"
-            Case HotkeyActionId.NavServerPing : Return "跳转到「工具 → 服务器状态探测」"
+            Case HotkeyActionId.NavServerPing : Return "跳转到「百宝箱 → 服务器状态探测」"
             Case Else : Return $"未知动作 ({CInt(Action)})"
         End Select
     End Function
@@ -376,7 +376,7 @@ Public Module ModHotkeys
                     WinInGameOverlay.ToggleOverlay()
                 Case HotkeyActionId.NavHelp
                     RestoreWindow()
-                    FrmMain.PageChange(FormMain.PageType.Help)
+                    FrmMain.PageChange(FormMain.PageType.Tools, FormMain.PageSubType.ToolsHelp)
                 Case HotkeyActionId.ToggleBorderless
                     Hint(ModWatcher.Watcher.ToggleActiveMinecraftBorderlessFullscreen(), HintType.Blue)
                 Case HotkeyActionId.NavServerPing

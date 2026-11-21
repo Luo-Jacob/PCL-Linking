@@ -10,10 +10,16 @@
             <local:MyCard Title="皮肤来源" Margin="0,0,0,15">
                 <StackPanel Margin="25,40,25,18">
                     <WrapPanel Margin="0,0,0,12">
-                        <local:MyButton x:Name="BtnLoadCurrentSkin" Text="读取当前账号皮肤" MinWidth="148" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,10,6" />
-                        <local:MyButton x:Name="BtnLoadLocalSkin" Text="选择本地皮肤 (.png)" MinWidth="148" Height="32" Padding="14,0" Margin="0,0,10,6" />
-                        <local:MyButton x:Name="BtnLoadLocalCape" Text="选择本地披风 (.png)" MinWidth="148" Height="32" Padding="14,0" Margin="0,0,10,6" />
-                        <local:MyButton x:Name="BtnSnapshotView" Text="保存 3D 截图" MinWidth="128" Height="32" Padding="14,0" Margin="0,0,0,6" />
+                        <local:MyButton x:Name="BtnLoadCurrentSkin" Text="读取当前账号皮肤" MinWidth="136" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,10,6" />
+                        <local:MyButton x:Name="BtnLoadLocalSkin" Text="选择本地皮肤 (.png)" MinWidth="136" Height="32" Padding="14,0" Margin="0,0,10,6" />
+                        <local:MyButton x:Name="BtnLoadLocalCape" Text="选择本地披风 (.png)" MinWidth="136" Height="32" Padding="14,0" Margin="0,0,10,6" />
+                        <local:MyButton x:Name="BtnSnapshotView" Text="保存 3D 截图" MinWidth="116" Height="32" Padding="14,0" Margin="0,0,10,6" />
+                        <local:MyComboBox x:Name="ComboAvatarSize" Width="88" Height="32" Margin="0,0,6,6" ToolTip="导出头像分辨率">
+                            <local:MyComboBoxItem Content="64×64" IsSelected="True" Tag="64" />
+                            <local:MyComboBoxItem Content="96×96" Tag="96" />
+                            <local:MyComboBoxItem Content="128×128" Tag="128" />
+                        </local:MyComboBox>
+                        <local:MyButton x:Name="BtnExportAvatar" Text="导出头像 (.png)" MinWidth="118" Height="32" Padding="12,0" Margin="0,0,0,6" />
                     </WrapPanel>
                     <Grid>
                         <Grid.ColumnDefinitions>
