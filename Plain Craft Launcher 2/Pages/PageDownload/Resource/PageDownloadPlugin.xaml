@@ -1,0 +1,22 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageDownloadPlugin"
+    PanScroll="Content">
+    <local:PageResource x:Name="Content" PageType="Plugin" TypeName="插件" TypeNameSpaced="插件">
+        <local:MyComboBoxItem Content="全部" Tag="" IsSelected="True" />
+        <local:MyComboBoxItem Content="管理" Tag="/management" />
+        <local:MyComboBoxItem Content="经济" Tag="/economy" />
+        <local:MyComboBoxItem Content="世界管理" Tag="/world-management" />
+        <local:MyComboBoxItem Content="游戏机制" Tag="/game-mechanics" />
+        <local:MyComboBoxItem Content="聊天" Tag="/chat" />
+        <local:MyComboBoxItem Content="实用工具" Tag="/utility" />
+        <local:MyComboBoxItem Content="性能优化" Tag="/optimization" />
+        <local:MyComboBoxItem Content="小游戏" Tag="/minigame" />
+        <local:MyComboBoxItem Content="冒险" Tag="/adventure" />
+        <local:MyComboBoxItem Content="装饰" Tag="/decoration" />
+        <local:MyComboBoxItem Content="服务器社交" Tag="/social" />
+        <local:MyComboBoxItem Content="支持库" Tag="/library" />
+    </local:PageResource>
+</local:MyPageRight>

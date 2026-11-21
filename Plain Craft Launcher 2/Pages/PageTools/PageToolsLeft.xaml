@@ -1,0 +1,15 @@
+<local:MyPageLeft x:Class="PageToolsLeft"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="clr-namespace:PCL"
+      mc:Ignorable="d">
+    <StackPanel Margin="0,20,0,0" Name="PanItem">
+        <local:MyListItem x:Name="ItemHotkeys" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="0" Checked="True" PaddingLeft="14" MinPaddingRight="20" Height="36" VerticalAlignment="Top" Title="全局快捷键" />
+        <local:MyListItem x:Name="ItemServer" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="1" PaddingLeft="14" MinPaddingRight="20" Height="36" VerticalAlignment="Top" Title="服务器生成/管理" />
+        <local:MyListItem x:Name="ItemSkin3D" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="2" PaddingLeft="14" MinPaddingRight="20" Height="36" VerticalAlignment="Top" Title="皮肤 3D 预览" />
+        <local:MyListItem x:Name="ItemResourceMerge" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="3" PaddingLeft="14" MinPaddingRight="20" Height="36" VerticalAlignment="Top" Title="资源包合并" />
+        <local:MyListItem x:Name="ItemServerPing" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="4" PaddingLeft="14" MinPaddingRight="20" Height="36" VerticalAlignment="Top" Title="服务器状态探测" />
+    </StackPanel>
+</local:MyPageLeft>

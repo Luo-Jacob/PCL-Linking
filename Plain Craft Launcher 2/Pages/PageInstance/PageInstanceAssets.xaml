@@ -1,0 +1,55 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageInstanceAssets"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,25,25,40">
+
+            <local:MyCard Title="已知资源自动更新" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <local:MyCheckBox x:Name="ChkAutoUpdateAssets" Text="启动游戏前自动检查并更新来自 Modrinth / CurseForge 的已知资源包与光影" Margin="0,0,0,10" />
+                    <WrapPanel VerticalAlignment="Center" Margin="0,0,0,6">
+                        <local:MyButton x:Name="BtnCheckAssetUpdates" Text="检查已知资源更新" MinWidth="138" Height="30" Padding="12,0" ColorType="Highlight" Margin="0,0,8,4" />
+                        <local:MyButton x:Name="BtnUpdateAllAssets" Text="一键更新全部" MinWidth="124" Height="30" Padding="12,0" ColorType="Highlight" Margin="0,0,8,4" Visibility="Collapsed" />
+                        <local:MyButton x:Name="BtnRefreshAssets" Text="重新扫描" MinWidth="88" Height="30" Padding="10,0" Margin="0,0,0,4" />
+                    </WrapPanel>
+                    <TextBlock x:Name="LabAssetUpdateStatus" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap"
+                               Text="开启后，每次启动实例前将自动校验本地 .zip 资源包与光影包 Hash，发现新兼容版本即自动升级。" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard Title="资源包管理 (resourcepacks)" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <TextBlock x:Name="LabRpSummary" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="正在扫描当前实例的 resourcepacks 目录..." />
+                    <WrapPanel Margin="0,0,0,12">
+                        <local:MyButton x:Name="BtnImportRp" Text="导入资源包 (.zip)" MinWidth="126" Height="30" Padding="10,0" ColorType="Highlight" Margin="0,0,8,4" />
+                        <local:MyButton x:Name="BtnOpenRpDir" Text="打开目录" MinWidth="88" Height="30" Padding="10,0" Margin="0,0,8,4" />
+                    </WrapPanel>
+                    <local:MyHint x:Name="HintNoRp" Visibility="Collapsed" Theme="Blue" Margin="0,0,0,6"
+                                  Text="当前实例的 resourcepacks 目录中还没有资源包（可点击上方按钮直接导入 .zip）。" />
+                    <StackPanel x:Name="PanRpList" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard Title="光影包管理 (shaderpacks)" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <TextBlock x:Name="LabSpSummary" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="正在扫描当前实例的 shaderpacks 目录..." />
+                    <WrapPanel Margin="0,0,0,12">
+                        <local:MyButton x:Name="BtnImportSp" Text="导入光影包 (.zip)" MinWidth="126" Height="30" Padding="10,0" ColorType="Highlight" Margin="0,0,8,4" />
+                        <local:MyButton x:Name="BtnDisableActiveSp" Text="关闭当前光影" MinWidth="106" Height="30" Padding="10,0" Margin="0,0,8,4" />
+                        <local:MyButton x:Name="BtnOpenSpDir" Text="打开目录" MinWidth="88" Height="30" Padding="10,0" Margin="0,0,0,4" />
+                    </WrapPanel>
+                    <local:MyHint x:Name="HintShaderModStatus" Visibility="Collapsed" Theme="Blue" Margin="0,0,0,10" Text="" />
+                    <local:MyHint x:Name="HintNoSp" Visibility="Collapsed" Theme="Blue" Margin="0,0,0,6"
+                                  Text="当前实例的 shaderpacks 目录中还没有光影包（可点击上方按钮导入 .zip）。" />
+                    <StackPanel x:Name="PanSpList" />
+                </StackPanel>
+            </local:MyCard>
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

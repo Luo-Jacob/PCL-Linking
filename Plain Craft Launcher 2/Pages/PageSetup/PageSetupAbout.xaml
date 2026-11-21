@@ -1,0 +1,123 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageSetupAbout"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,10">
+            <local:MyCard x:Name="CardUpstream" Margin="0,15,0,15" Title="上游开源项目与原作者署名（PCL）">
+                <StackPanel Margin="25,40,25,20">
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,10">
+                        <Run Text="本软件是基于开源启动器 " />
+                        <Run FontWeight="SemiBold" Text="Plain Craft Launcher 2（PCL 2.14.0.0 开源版）" />
+                        <Run Text=" 二次开发的第三方修改版本。" />
+                        <Run FontWeight="SemiBold" Text="原版 PCL 由 龙腾猫跃 (LTCat) 创作并开源" />
+                        <Run Text="；依据《PCL 存储库合理使用指南》，若您喜欢核心启动与下载体验，欢迎支持并赞助原作者，日常使用亦推荐使用原版 PCL。" />
+                    </TextBlock>
+                    <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <local:MyButton x:Name="BtnSponsorLTCat" Text="赞助原作者 龙腾猫跃" Height="30" Padding="14,0" Margin="0,0,10,6" ColorType="Highlight" />
+                        <local:MyButton x:Name="BtnOpenPclRepo" Text="PCL 上游开源仓库" Height="30" Padding="12,0" Margin="0,0,10,6" />
+                        <local:MyButton x:Name="BtnOpenLmlRepo" Text="PCL Linking 修改版仓库 / 提交反馈" Height="30" Padding="12,0" Margin="0,0,0,6" />
+                    </WrapPanel>
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardInfo" Margin="0,0,0,15" Title="关于 PCL Linking修改版">
+                <StackPanel Margin="25,40,25,20">
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="26" />
+                            <RowDefinition Height="26" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="32" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" VerticalAlignment="Center" Opacity="0.75" Text="软件名称" />
+                        <TextBlock x:Name="LabSoftwareName" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="PCL Linking修改版" />
+
+                        <TextBlock Grid.Row="1" VerticalAlignment="Center" Opacity="0.75" Text="当前版本" />
+                        <TextBlock x:Name="LabVersion" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Text="v 1.0.1" />
+
+                        <TextBlock Grid.Row="2" VerticalAlignment="Top" Margin="0,4,0,0" Opacity="0.75" Text="开源衍生" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,4,0,6" TextWrapping="Wrap" LineHeight="20"
+                                   Text="第三方基于 PCL 2.14.0.0 开源版二次开发的非盈利爱好者修改版（Luo-Jacob），专注于多人联机与实用工具增强，遵循《PCL 存储库合理使用指南》与《PCL 分发有限许可》，可与官方 PCL 共存。" />
+
+                        <TextBlock Grid.Row="3" VerticalAlignment="Center" Opacity="0.75" Text="社区 QQ 群" />
+                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Text="870143562" Margin="0,0,12,0" />
+                            <local:MyButton x:Name="BtnCopyQQ" Text="复制群号" Height="24" Padding="10,0" ColorType="Highlight" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardTerms" Margin="0,0,0,15" Title="使用协议、联网服务说明与免责声明">
+                <StackPanel Margin="25,40,25,22">
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8">
+                        <Run Text="PCL Linking 是基于 PCL 2.14.0.0 开源版二次开发的非盈利爱好者增强启动器，可与官方 PCL 共存，" />
+                        <Run FontWeight="SemiBold" Text="与 Mojang、Microsoft 无官方授权 / 隶属关系，用户需自行持有合法 Minecraft 授权" />
+                        <Run Text="。" />
+                    </TextBlock>
+                    <TextBlock x:Name="LabTermsFeatures" TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,8"
+                               Text="本软件集成 EasyTier 组网、好友聊天室、联机邀请、Mod 同步、开服工具、Modrinth/CurseForge 资源下载等功能。" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,14"
+                               Text="启用好友、聊天室、公共节点等联网社交功能前，请阅读本协议与配套隐私政策，勾选即代表同意；不同意请勿启用该功能。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="1. 第三方组件说明" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="原 PCL 代码遵守其原始开源协议；EasyTier、Modrinth、CurseForge 等第三方服务，需同时遵守对应第三方协议。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="2. 联网与联机服务说明" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,6"
+                               Text="本服务仅提供消息中转、EasyTier 组网中继、联机通知转发。" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12">
+                        <Run Text="公共节点池、自定义中继节点不保证永久稳定可用；Mod 同步、开服工具仅为辅助，" />
+                        <Run FontWeight="SemiBold" Text="不对 Mod 兼容性、服务器稳定性、联机内玩家行为、外挂、欺诈负责，联机风险由用户自行承担" />
+                        <Run Text="。开发者可随时调整、暂停、终止联网服务，无商业 SLA 保障。" />
+                    </TextBlock>
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="3. 用户行为规范" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,6"
+                               Text="用户需遵守中国法律法规，禁止利用聊天室、联机、节点传播违法违规信息，禁止骚扰、刷屏、恶意联机轰炸、攻击接口、滥用节点、传播盗版游戏 / 侵权 Mod。" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="用户昵称头像不得违法违规、仿冒官方或他人；按法规要求需要实名核验时，用户应当配合。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="4. 知识产权" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="用户发送内容、自制整合包等内容著作权归用户本人；从 Modrinth/CurseForge 下载资源需遵守原作者许可，禁止违规二次分发、盗版传播。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="5. 未成年人" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="未满 18 周岁请监护人同意后再使用联网社交功能；不满 14 周岁个人信息按法规执行监护人单独同意。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="6. 免责与责任限制" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="本软件按现状提供，不保证无 Bug、数据永不丢失。第三方接口故障、网络故障、不可抗力造成的损失，开发者不承担赔偿；用户之间联机、聊天产生纠纷由用户自行解决。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="7. 协议变更与账号注销" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="协议更新会在 PCL Linking 内提示，继续使用视为接受新版；用户可申请注销扩展账号，相关数据按隐私政策删除 / 匿名化，法定留存日志除外。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="8. 法律适用" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,12"
+                               Text="本协议适用中华人民共和国法律，争议优先协商，协商不成向有管辖权法院起诉。" />
+
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" Margin="0,4,0,4" Text="9. 配套隐私政策与第三方开源声明" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="21" Margin="0,0,0,10"
+                               Text="本修改版已彻底移除遥测统计与广告，所有个人配置均存放在本地 PCL Linking\ 目录（敏感凭据通过 Windows DPAPI 加密保护）。仅在您主动使用联机、好友加密聊天/群聊/文件传输、实例同步或资源下载时，才会访问对应官方接口或您配置的 ntfy / EasyTier 中继。" />
+                    <WrapPanel Orientation="Horizontal">
+                        <local:MyButton x:Name="BtnOpenPrivacyDoc" Text="查看隐私政策 (PRIVACY.md)" Height="28" Padding="12,0" Margin="0,0,10,4" />
+                        <local:MyButton x:Name="BtnOpenThirdPartyDoc" Text="第三方开源声明 (THIRD-PARTY-LICENSES.md)" Height="28" Padding="12,0" Margin="0,0,0,4" />
+                    </WrapPanel>
+                </StackPanel>
+            </local:MyCard>
+
+            <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

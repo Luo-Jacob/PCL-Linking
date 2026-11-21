@@ -1,0 +1,229 @@
+﻿<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageFriends" PanScroll="PanBack">
+    <Grid Margin="22,12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="1*" />
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Column="0" Margin="0,0,14,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="1*" />
+            </Grid.RowDefinitions>
+
+            <!-- 卡片 1：我的名片 -->
+            <local:MyCard Grid.Row="0" Title="我的名片" CornerRadius="6" Margin="0,0,0,14">
+                <StackPanel Margin="15,38,15,14">
+                    <Border Background="{DynamicResource ColorBrushSurface}" CornerRadius="6" Padding="11,9" Margin="0,0,0,10">
+                        <StackPanel>
+                            <Grid Cursor="Hand" Background="Transparent" ToolTip="点击仅复制 ID" MouseLeftButtonUp="LabMyId_Click">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition Width="1*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="ID" Foreground="{DynamicResource ColorBrushGray3}" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="LabMyId" Text="正在生成……" FontWeight="Bold" FontSize="13.5"
+                                           Foreground="{DynamicResource ColorBrush1}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="复制" Foreground="{DynamicResource ColorBrush3}" FontSize="11.5" VerticalAlignment="Center" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ColorBrushGray5}" Opacity="0.3" Margin="0,7" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition Width="1*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="密码" Foreground="{DynamicResource ColorBrushGray3}" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="LabMyPassword" Text="••••••••••••••••••••" FontSize="12.5"
+                                           Foreground="{DynamicResource ColorBrush1}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <local:MyIconButton Grid.Column="2" x:Name="BtnTogglePwd" Width="22" Height="22" Theme="Black"
+                                                    ToolTip="显示或隐藏密码" LogoScale="0.85"
+                                                    Logo="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ColorBrushGray5}" Opacity="0.3" Margin="0,7" />
+                            <Grid Cursor="Hand" Background="Transparent" ToolTip="点击修改群聊展示昵称" MouseLeftButtonUp="LabMyNickname_Click">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition Width="1*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="昵称" Foreground="{DynamicResource ColorBrushGray3}" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="LabMyNickname" Text="玩家" FontSize="12.5"
+                                           Foreground="{DynamicResource ColorBrush1}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="修改" Foreground="{DynamicResource ColorBrush3}" FontSize="11.5" VerticalAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <local:MyButton Grid.Column="0" x:Name="BtnCopyCard" Text="复制名片" Height="28" Padding="6,0" ColorType="Highlight" />
+                        <local:MyButton Grid.Column="2" x:Name="BtnSetPassword" Text="设密码" Height="28" Padding="6,0" />
+                        <local:MyButton Grid.Column="4" x:Name="BtnRegenerate" Text="重置" Height="28" Padding="6,0" ToolTip="重新生成随机 20 位密码" />
+                    </Grid>
+
+                    <TextBlock Text="私下互加名片即可聊天，消息逐条验密并端到端加密。" TextWrapping="Wrap"
+                               Foreground="{DynamicResource ColorBrushGray3}" FontSize="11.5" Margin="0,9,0,0" LineHeight="16" />
+                </StackPanel>
+            </local:MyCard>
+
+            <!-- 卡片 2：好友与群聊列表 -->
+            <local:MyCard Grid.Row="1" Title="好友与群" CornerRadius="6">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,12,0">
+                        <TextBlock x:Name="LabFriendCount" Text="0 人" Foreground="{DynamicResource ColorBrushGray3}" FontSize="11.5"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <local:MyButton x:Name="BtnBroadcastInvite" Text="群发邀请" Height="24" Padding="9,0" Margin="0,0,6,0"
+                                        ToolTip="将当前创建的联机房间邀请一键群发给好友列表中的所有好友" />
+                        <local:MyButton x:Name="BtnAddFriend" Text="+ 添加" Height="24" Padding="10,0" ColorType="Highlight" />
+                    </StackPanel>
+
+                    <Grid Margin="12,38,12,12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <local:MyScrollViewer x:Name="PanFriendsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel x:Name="PanFriends" Margin="0,2" />
+                            </local:MyScrollViewer>
+                            <StackPanel x:Name="PanEmptyFriends" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                <Path Data="M16,11C17.66,11 19,9.66 19,8C19,6.34 17.66,5 16,5C14.34,5 13,6.34 13,8C13,9.66 14.34,11 16,11M8,11C9.66,11 11,9.66 11,8C11,6.34 9.66,5 8,5C6.34,5 5,6.34 5,8C5,9.66 6.34,11 8,11M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M16,13C15.71,13 15.38,13.02 15.03,13.05C16.19,13.89 17,15.02 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13Z"
+                                      Fill="{DynamicResource ColorBrushGray4}" Width="30" Height="30" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.6" />
+                                <TextBlock Text="还没有好友或群聊" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource ColorBrushGray3}"
+                                           HorizontalAlignment="Center" Margin="0,8,0,3" />
+                                <TextBlock Text="点击右上角「+ 添加」加好友、入群或建群" FontSize="11.5" Foreground="{DynamicResource ColorBrushGray4}"
+                                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="2,8,2,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Height="1" Background="{DynamicResource ColorBrushGray5}" Opacity="0.3" Margin="0,0,0,8" />
+                            <Grid Grid.Row="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" x:Name="LabRelay" Text="中继: ntfy.sh" Foreground="{DynamicResource ColorBrushGray3}"
+                                           FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,6,0" />
+                                <local:MyButton Grid.Column="1" x:Name="BtnFriendAgreement" Text="协议" Height="24" Padding="8,0" Margin="0,0,6,0" ToolTip="查看好友服务使用协议" />
+                                <local:MyButton Grid.Column="2" x:Name="BtnRelay" Text="中继" Height="24" Padding="8,0" />
+                                <local:MyButton Grid.Column="3" x:Name="BtnUnblock" Text="黑名单" Height="24" Padding="8,0" Margin="6,0,0,0" />
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </local:MyCard>
+        </Grid>
+
+        <!-- 右侧：聊天卡片 -->
+        <local:MyCard Grid.Column="1" CornerRadius="6">
+            <Grid Margin="16,12,16,14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="1*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- 聊天顶栏 -->
+                <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="1*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" x:Name="AvatarChatBorder" Width="34" Height="34" CornerRadius="17"
+                            Background="{DynamicResource ColorBrush3}" Margin="0,0,10,0" Visibility="Collapsed">
+                        <TextBlock x:Name="LabChatAvatar" Text="?" Foreground="White" FontWeight="Bold" FontSize="14"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                        <TextBlock x:Name="LabChatTitle" Text="选择一位好友开始聊天" FontWeight="Bold" FontSize="14.5"
+                                   Foreground="{DynamicResource ColorBrush1}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="LabChatSubTitle" Text="点击左侧好友列表，或先添加新好友" FontSize="11.5"
+                                   Foreground="{DynamicResource ColorBrushGray3}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <WrapPanel Grid.Column="2" x:Name="PanChatActions" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" MaxWidth="520">
+                        <local:MyButton x:Name="BtnRemark" Text="备注" Height="27" Padding="8,0" Margin="0,2,5,2" ToolTip="修改好友备注名" />
+                        <local:MyButton x:Name="BtnGroupCard" Text="群名片" Height="27" Padding="8,0" Margin="0,2,5,2" Visibility="Collapsed" ToolTip="复制当前群号与密钥分享给好友" />
+                        <local:MyButton x:Name="BtnInviteToGroup" Text="拉好友" Height="27" Padding="8,0" Margin="0,2,5,2" Visibility="Collapsed" ToolTip="选择好友直接向其发送入群邀请卡片" />
+                        <local:MyButton x:Name="BtnRenameGroup" Text="改群名" Height="27" Padding="8,0" Margin="0,2,5,2" Visibility="Collapsed" />
+                        <local:MyButton x:Name="BtnClearHistory" Text="清空" Height="27" Padding="8,0" Margin="0,2,5,2" ToolTip="清空当前会话的本地聊天记录" />
+                        <local:MyButton x:Name="BtnRemoveFriend" Text="删除" Height="27" Padding="8,0" Margin="0,2,5,2" ColorType="Red"
+                                        ToolTip="选择仅移除或删除并拉黑该好友" />
+                        <local:MyButton x:Name="BtnLeaveGroup" Text="退群" Height="27" Padding="8,0" Margin="0,2,5,2" ColorType="Red" Visibility="Collapsed"
+                                        ToolTip="退出并删除本地群聊记录" />
+                        <local:MyButton x:Name="BtnShareModSync" Text="同步 Mod" Height="27" Padding="8,0" Margin="0,2,5,2"
+                                        ToolTip="向当前会话发送实例的 Mod 清单，方便一键对比与补齐差异" />
+                        <local:MyButton x:Name="BtnInstSyncMenu" Text="实例同步" Height="27" Padding="8,0" Margin="0,2,5,2"
+                                        ToolTip="设置启动 PCL Linking 自动实例同步、推送当前实例修订版或手动同步" />
+                        <local:MyButton x:Name="BtnSendInvite" Text="发联机邀请" Height="27" Padding="10,0" Margin="0,2,0,2" ColorType="Highlight" />
+                    </WrapPanel>
+                </Grid>
+
+                <Border Grid.Row="1" Height="1" Background="{DynamicResource ColorBrushGray5}" Opacity="0.35" Margin="0,0,0,8" />
+
+                <!-- 聊天消息区 & 空状态（支持拖拽文件加密发送） -->
+                <Grid Grid.Row="2" Background="Transparent" AllowDrop="True" PreviewDragOver="ChatArea_PreviewDragOver" Drop="ChatArea_Drop">
+                    <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="PanMessages" Margin="2,4" />
+                    </local:MyScrollViewer>
+
+                    <StackPanel x:Name="PanNoChat" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="360" IsHitTestVisible="False">
+                        <Border Width="52" Height="52" CornerRadius="26" Background="{DynamicResource ColorBrushSurface}" HorizontalAlignment="Center" Margin="0,0,0,12">
+                            <Path Data="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H5.17L4,17.17V4H20V16M7,9H17V11H7V9M7,6H17V8H7V6M7,12H14V14H7V12Z"
+                                  Fill="{DynamicResource ColorBrush3}" Width="24" Height="24" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock x:Name="LabEmptyHeading" Text="选择一位好友或群聊开始沟通" FontWeight="Bold" FontSize="14.5"
+                                   Foreground="{DynamicResource ColorBrush1}" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="LabEmptySub" Text="支持私聊与多人群聊、端到端加密文件传输（10 MB 内）、实例启动自动同步与一键发送联机邀请。"
+                                   FontSize="12" Foreground="{DynamicResource ColorBrushGray3}" TextWrapping="Wrap"
+                                   TextAlignment="Center" LineHeight="18" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 底部输入栏 -->
+                <Grid Grid.Row="3" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="1*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <local:MyButton Grid.Column="0" x:Name="BtnSendFile" Text="📎 文件" Height="34" Padding="10,0" Margin="0,0,8,0"
+                                    ToolTip="选择文件进行端到端加密发送（单文件上限 10 MB；支持直接拖入文件或 Ctrl+V 发送截图）" />
+                    <local:MyTextBox Grid.Column="1" x:Name="TextChatInput" MinHeight="34" MaxHeight="90" MaxLength="2000"
+                                     AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                     VerticalContentAlignment="Center" Padding="6,6"
+                                     HintText="输入内容（Enter 发送，Shift+Enter 换行，Ctrl+V 发截图）"
+                                     PreviewKeyDown="TextChatInput_PreviewKeyDown" />
+                    <local:MyButton Grid.Column="2" x:Name="BtnSend" Text="发送" Height="34" MinWidth="76" Padding="12,0"
+                                    Margin="8,0,0,0" ColorType="Highlight" />
+                </Grid>
+            </Grid>
+        </local:MyCard>
+    </Grid>
+</local:MyPageRight>

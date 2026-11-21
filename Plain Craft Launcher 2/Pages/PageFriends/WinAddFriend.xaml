@@ -1,0 +1,110 @@
+<Window x:Class="WinAddFriend"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PCL"
+        Title="添加好友与群聊"
+        Width="448"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource ColorBrushSurface}"
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <StackPanel Margin="20,18,20,18">
+        <TextBlock Text="添加好友 · 加入或创建群聊" FontSize="15.5" FontWeight="Bold"
+                   Foreground="{DynamicResource ColorBrush1}" Margin="0,0,0,10" />
+
+        <WrapPanel Orientation="Horizontal" Margin="0,0,0,10">
+            <local:MyRadioButton x:Name="RbModeAddFriend" Text="添加好友" Checked="True" ColorType="Highlight" Margin="0,0,8,0" />
+            <local:MyRadioButton x:Name="RbModeJoinGroup" Text="加入群聊" ColorType="Highlight" Margin="0,0,8,0" />
+            <local:MyRadioButton x:Name="RbModeCreateGroup" Text="创建群聊" ColorType="Highlight" />
+        </WrapPanel>
+
+        <local:MyHint x:Name="HintClipboard" Theme="Blue" Visibility="Collapsed" Margin="0,0,0,10" Text="" />
+
+        <!-- 模式 1：添加好友 -->
+        <StackPanel x:Name="PanAddFriend">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="好友 ID" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextFriendId" Height="30" MaxLength="10" HintText="10 位数字好友 ID" Margin="0,0,8,0" />
+                <local:MyButton Grid.Column="2" x:Name="BtnPasteCard" Text="识别剪贴板" Height="30" Padding="10,0" />
+            </Grid>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="好友密码" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextFriendPwd" Height="30" MaxLength="64" HintText="至少 8 位（对方名片中提供）" />
+            </Grid>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="备注名称" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextFriendRemark" Height="30" MaxLength="32" HintText="可选（留空显示数字 ID）" />
+            </Grid>
+            <TextBlock Text="添加后将自动发送一次静默握手包验证双方密码与通道互通。" FontSize="11.5"
+                       Foreground="{DynamicResource ColorBrushGray3}" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!-- 模式 2：加入群聊 -->
+        <StackPanel x:Name="PanJoinGroup" Visibility="Collapsed">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="群号" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextJoinGroupId" Height="30" MaxLength="12" HintText="例：G12345678" Margin="0,0,8,0" />
+                <local:MyButton Grid.Column="2" x:Name="BtnPasteGroupCard" Text="识别群名片" Height="30" Padding="10,0" />
+            </Grid>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="群密钥" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextJoinGroupSecret" Height="30" MaxLength="64" HintText="至少 8 位（群名片中提供）" />
+            </Grid>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="群聊名称" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextJoinGroupName" Height="30" MaxLength="32" HintText="可选（本地显示用名称）" />
+            </Grid>
+        </StackPanel>
+
+        <!-- 模式 3：创建群聊 -->
+        <StackPanel x:Name="PanCreateGroup" Visibility="Collapsed">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="群聊名称" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush1}" />
+                <local:MyTextBox Grid.Column="1" x:Name="TextCreateGroupName" Height="30" MaxLength="32" HintText="例：周末开黑小队" />
+            </Grid>
+            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Foreground="{DynamicResource ColorBrushGray2}" Margin="0,4,0,0"
+                       Text="系统将自动生成唯一 9 位群号（G 开头）与 24 位端到端加密群密钥；创建后可直接复制群名片或点击「拉好友」邀请好友一键入群。" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <local:MyButton x:Name="BtnConfirm" Text="确定" MinWidth="92" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,10,0" />
+            <local:MyButton x:Name="BtnCancel" Text="取消" MinWidth="78" Height="32" Padding="12,0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

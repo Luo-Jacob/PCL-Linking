@@ -1,0 +1,68 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageToolsResourceMerge"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,25,25,40" AllowDrop="True">
+
+            <local:MyCard x:Name="CardPackList" Title="资源包列表" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <local:MyButton x:Name="BtnAddZipPack" Text="添加材质包 (.zip)" MinWidth="136" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,10,0" />
+                        <local:MyButton x:Name="BtnAddFolderPack" Text="添加材质包文件夹" MinWidth="136" Height="32" Padding="14,0" Margin="0,0,10,0" />
+                        <local:MyButton x:Name="BtnClearPacks" Text="清空列表" MinWidth="92" Height="32" Padding="12,0" ColorType="Red" />
+                    </StackPanel>
+                    <local:MyHint x:Name="HintNoPacks" Visibility="Visible" Theme="Blue" Margin="0,0,0,2"
+                                  Text="暂无材质包" />
+                    <StackPanel x:Name="PanPackList" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard Title="合并与导出" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1.4*" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="包描述" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyTextBox Grid.Column="1" x:Name="TextMergeDesc" Text="Merged by PCL Linking ResourcePack Merger" />
+                        <TextBlock Grid.Column="3" Text="pack_format" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyComboBox Grid.Column="4" x:Name="ComboPackFormat" IsEditable="True" IsTextSearchEnabled="False">
+                            <local:MyComboBoxItem Content="75 (MC 26.x / 最新版)" Tag="75" />
+                            <local:MyComboBoxItem Content="55 (MC 1.21.5+)" Tag="55" />
+                            <local:MyComboBoxItem Content="46 (MC 1.21.4)" Tag="46" />
+                            <local:MyComboBoxItem Content="34 (MC 1.21 - 1.21.1)" Tag="34" IsSelected="True" />
+                            <local:MyComboBoxItem Content="22 (MC 1.20.4)" Tag="22" />
+                            <local:MyComboBoxItem Content="15 (MC 1.20.1)" Tag="15" />
+                            <local:MyComboBoxItem Content="13 (MC 1.19.4)" Tag="13" />
+                            <local:MyComboBoxItem Content="8 (MC 1.18.2)" Tag="8" />
+                            <local:MyComboBoxItem Content="6 (MC 1.16.5)" Tag="6" />
+                            <local:MyComboBoxItem Content="3 (MC 1.12.2)" Tag="3" />
+                        </local:MyComboBox>
+                    </Grid>
+                    <local:MyCheckBox x:Name="ChkIncludePackPng" Checked="True" Text="保留主材质包图标 (pack.png)" Margin="0,0,0,12" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <local:MyButton x:Name="BtnAnalyzeConflicts" Text="分析文件冲突" MinWidth="120" Height="32" Padding="14,0" Margin="0,0,10,0" />
+                        <local:MyButton x:Name="BtnMergeExport" Text="合并并导出 (.zip)" MinWidth="148" Height="32" Padding="16,0" ColorType="Highlight" Margin="0,0,14,0" />
+                        <TextBlock x:Name="LabMergeStatus" VerticalAlignment="Center" FontSize="12.5" Foreground="{DynamicResource ColorBrush2}" Text="" />
+                    </StackPanel>
+                    <TextBlock x:Name="LabConflictPreview" TextWrapping="Wrap" Foreground="{DynamicResource ColorBrush2}" FontSize="12" Text="" />
+                    <StackPanel x:Name="PanConflictToolbar" Orientation="Horizontal" Margin="0,8,0,6" Visibility="Collapsed">
+                        <TextBlock x:Name="LabOverrideCount" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource ColorBrush3}" Margin="0,0,12,0" Text="可逐项点选冲突文件要保留的材质包：" />
+                        <local:MyButton x:Name="BtnResetOverrides" Text="全部按列表优先级" Height="26" Padding="10,0" />
+                    </StackPanel>
+                    <StackPanel x:Name="PanConflictResolver" Margin="0,2,0,0" />
+                </StackPanel>
+            </local:MyCard>
+            <TextBlock HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

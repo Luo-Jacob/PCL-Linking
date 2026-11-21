@@ -1,0 +1,45 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageHelp"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,20,25,35">
+
+            <local:MyCard Title="PCL Linking 功能使用说明" Margin="0,0,0,15">
+                <StackPanel Margin="25,38,25,16">
+                    <TextBlock Text="这里整理了启动器各个页面的常用操作和实用功能，可以按分类筛选或直接搜关键词，需要哪个功能点右下角按钮就能直接跳过去。"
+                               TextWrapping="Wrap" FontSize="13" LineHeight="19"
+                               Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,10" />
+                    <local:MySearchBox x:Name="SearchBox" Margin="0,0,0,10"
+                                       HintText="搜关键词（例如：安装、加载器、离线皮肤、联机、群聊、实例同步、开服、冲突、快照、无边框、快捷键、背景音乐）" />
+                    <WrapPanel x:Name="PanHelpCategories" Orientation="Horizontal">
+                        <local:MyRadioButton x:Name="BtnCatAll" Tag="ALL" ColorType="Highlight" Text="全部" Checked="True" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatLaunch" Tag="安装启动" ColorType="Highlight" Text="安装与启动" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatMulti" Tag="联机社交" ColorType="Highlight" Text="联机与好友" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatServer" Tag="开服运维" ColorType="Highlight" Text="开服与测速" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatModDiag" Tag="Mod排雷" ColorType="Highlight" Text="Mod 与排错" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatInstance" Tag="实例定制" ColorType="Highlight" Text="实例与工具" Margin="0,0,6,4" />
+                        <local:MyRadioButton x:Name="BtnCatFaq" Tag="常见排查" ColorType="Highlight" Text="设置与常见问题" Margin="0,0,0,4" />
+                    </WrapPanel>
+                </StackPanel>
+            </local:MyCard>
+
+            <TextBlock x:Name="LabHelpCount" Text="共 25 项说明" FontSize="12.5"
+                       Foreground="{DynamicResource ColorBrushGray3}" Margin="4,0,0,10" />
+
+            <StackPanel x:Name="PanHelpCards" />
+
+            <local:MyCard x:Name="CardHelpEmpty" Visibility="Collapsed" Margin="0,0,0,15">
+                <StackPanel Margin="25,22" HorizontalAlignment="Center">
+                    <TextBlock Text="未找到匹配的功能说明" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource ColorBrush1}" HorizontalAlignment="Center" />
+                    <TextBlock Text="尝试更换关键词，或点击上方「全部功能」查看完整教程。" FontSize="12.5"
+                               Foreground="{DynamicResource ColorBrushGray3}" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                </StackPanel>
+            </local:MyCard>
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

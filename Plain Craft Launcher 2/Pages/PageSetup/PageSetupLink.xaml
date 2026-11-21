@@ -1,0 +1,128 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+    mc:Ignorable="d" x:Class="PageSetupLink"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,10">
+            <local:MyCard x:Name="CardArgument" Margin="0,15" Title="连接选项">
+                <StackPanel Margin="25,40,25,20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="60" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="28" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="模式" Margin="0,0,25,0" />
+                        <local:MyComboBox Grid.Row="0" x:Name="ComboLatencyMode" Grid.ColumnSpan="2" local:SettingService.Key="LinkLatencyMode" Grid.Column="1">
+                            <local:MyComboBoxItem Content="优先直连" IsSelected="True" ToolTip="尽量不进行中转，而是 P2P 直连。" />
+                            <local:MyComboBoxItem Content="优先低延迟" ToolTip="如果使用中转节点能降低延迟，就不进行直连。&#xa;不过，这会增加社区节点的负载……" />
+                        </local:MyComboBox>
+                    </Grid>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="60" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="协议偏好" Margin="0,0,25,0" />
+                        <local:MyComboBox x:Name="ComboProtocol" Grid.ColumnSpan="2" local:SettingService.Key="LinkProtocol" Grid.Column="1">
+                            <local:MyComboBoxItem Content="优先 TCP" IsSelected="True" ToolTip="TCP 更稳定，适合网络环境较差或丢包较多的场合。" />
+                            <local:MyComboBoxItem Content="优先 UDP" ToolTip="UDP 延迟更低，适合网络环境较好的场合。" />
+                        </local:MyComboBox>
+                    </Grid>
+                    <local:MyCheckBox Margin="0,16,0,0" Height="22" local:SettingService.Key="LinkPeerPool"
+                                      Text="自动从社区节点池获取可用节点"
+                                      ToolTip="从 EasyTier 官方的公共节点统计接口获取当前在线的中继节点。&#xa;关闭后将固定使用 PCL Linking 内置节点，接口不通时也会自动退回内置节点。" />
+                    <local:MyHint Margin="0,10,0,0" Theme="Blue"
+                                  Text="节点数量会限制在 6 个以内：太少了容易被单个节点拖死，太多了握手会变慢。" />
+                </StackPanel>
+            </local:MyCard>
+            <local:MyCard Margin="0,0,0,15" Title="网络兼容">
+                <StackPanel Margin="25,40,25,20">
+                    <local:MyCheckBox Height="22" local:SettingService.Key="LinkEnableIPv6"
+                                      Text="允许使用 IPv6 通信"
+                                      ToolTip="IPv6 比 IPv4 更容易打洞成功，通常能明显改善联机体验。&#xa;只有在你确定网络环境不支持 IPv6 时才需要关闭。" />
+                    <local:MyCheckBox Height="22" Margin="0,10,0,0" local:SettingService.Key="LinkPunchSym"
+                                      Text="对对称型 NAT 进行端口猜测"
+                                      ToolTip="让 EasyTier 尝试用生日悖论猜测对称型 NAT 的端口。&#xa;一般保持开启即可；部分网络下关闭它反而更稳定。" />
+                    <local:MyCheckBox Height="22" Margin="0,10,0,0" local:SettingService.Key="LinkForceRelay"
+                                      Text="强制通过中继节点连接"
+                                      ToolTip="完全不尝试 P2P 直连，所有流量都走节点中转。&#xa;只有在你确信直连会失败、或直连质量极差时才建议开启，它会明显增加延迟。" />
+                    <local:MyHint Margin="0,12,0,0" Theme="Yellow"
+                                  Text="以上选项修改后需要重新创建或加入房间才会生效。&#xa;不清楚含义时保持默认即可。" />
+                </StackPanel>
+            </local:MyCard>
+            <local:MyCard Margin="0,0,0,15" Title="自动联机与车队固定码">
+                <StackPanel Margin="25,40,25,20">
+                    <local:MyCheckBox local:SettingService.Key="LinkAutoJoin" x:Name="CheckAutoJoin" Height="22"
+                                      Text="进入联机页时自动加入上次加入过的房间"
+                                      ToolTip="PCL Linking 会记住你上一次成功加入的房间。&#xa;开启后，打开联机页会自动用上次的邀请码尝试加入，不用再手动输入。" />
+                    <local:MyCheckBox local:SettingService.Key="LinkAutoReconnect" x:Name="CheckAutoReconnect" Height="22" Margin="0,10,0,0"
+                                      Text="联机意外断开时自动重连（最多重试 3 次）"
+                                      ToolTip="若因网络波动或中继节点短暂失联导致隧道意外退出，将自动在 3 秒后重试重连，避免房主/玩家频繁掉线重建。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                        <local:MyCheckBox local:SettingService.Key="LinkStickyRoom" x:Name="CheckStickyRoom" Height="22"
+                                          Text="固定房主房间码（重开房间保留相同邀请码与密码）"
+                                          ToolTip="开启后，作为房主重开同一端口的联机房间时将尽量沿用上次生成的邀请码后缀与密码，方便车队好友从收藏夹长期直接重连。" />
+                        <local:MyButton x:Name="BtnResetStickyRoom" Text="重置固定码" Height="24" Padding="10,0" Margin="14,0,0,0" />
+                    </StackPanel>
+                    <local:MyHint Margin="0,12,0,0" Theme="Blue"
+                                  Text="仅记住「加入」过的房间；开启「固定房主房间码」后，只要你的端口号不变，下次建房生成的邀请码也能长期保持不变。" />
+                </StackPanel>
+            </local:MyCard>
+            <local:MyCard Margin="0,0,0,15" Title="高级设置" IsSwapped="True" CanSwap="True">
+                <Grid Margin="25,40,25,22">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="28" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="14" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="15" />
+                        <RowDefinition Height="35" />
+                    </Grid.RowDefinitions>
+                    <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="自定义节点" Margin="0,0,25,0" />
+                    <local:MyTextBox x:Name="TextCustomPeer" local:SettingService.Key="LinkCustomPeer" Grid.Column="1" MaxHeight="28" 
+                        ToolTip="填写后将不再使用社区节点池，只用这里列出的节点。&#xa;如果你自己搭建了 EasyTier 节点，可以用这个设置让 PCL Linking 连接它。&#xa;&#xa;使用逗号或分号分隔多个节点，例如：&#xa;tcp://1.2.3.4:11010;tcp://example.com:11010&#xa;支持 tcp://、udp://、ws://、wss:// 前缀，省略时按 tcp 处理。&#xa;&#xa;房主和加入者必须连接到至少一个相同节点，才能互相连上。&#xa;留空则自动使用社区节点池。" />
+                    <local:MyHint Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Theme="Yellow"
+                                  Text="社区节点由志愿者维护，随时可能失效。连不上节点时，可以在这里换成自己的节点。" />
+
+                    <TextBlock Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Left" Text="额外穿透端口" Margin="0,0,25,0" />
+                    <Grid Grid.Row="3" Grid.Column="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <local:MyTextBox x:Name="TextExtraPorts" local:SettingService.Key="LinkExtraPorts" Grid.Column="0" Height="28"
+                                         HintText="可选，逗号分隔，如 24454,8100"
+                                         ToolTip="除 Minecraft 主端口外额外允许通过 EasyTier 穿透与转发的 TCP/UDP 端口（例如游戏内语音 Mod Simple Voice Chat 默认端口 24454，或 BlueMap/Dynmap 地图端口 8100）。&#xa;房主和需要使用的好友均填入相同端口后生效。" />
+                        <local:MyButton x:Name="BtnAddVoiceChatPort" Grid.Column="1" Text="填入语音端口 24454" Height="26" Padding="10,0" Margin="8,0,0,0" />
+                    </Grid>
+                    <local:MyHint Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" Theme="Blue"
+                                  Text="适用于 Simple Voice Chat (24454) 或 Plasmo Voice 等联机语音/地图模组；房主与加入者双方均填好相同端口后即自动穿透。" />
+
+                    <StackPanel Orientation="Horizontal" Grid.Row="6" Grid.ColumnSpan="2" HorizontalAlignment="Left">
+                        <local:MyButton MinWidth="140" Padding="13,5" Margin="0,0,20,0" HorizontalAlignment="Left"
+                            Text="什么是 EasyTier？" ColorType="Highlight"
+                            ToolTip="联机功能基于开源的 EasyTier 组网实现。&#xa;如果你有空闲的高带宽服务器，可以自建一个共享节点，稳定又不用抢公共节点。" 
+                            local:CustomEventService.EventType="打开网页" local:CustomEventService.EventData="https://easytier.cn/" />
+                        <local:MyButton MinWidth="140" Padding="13,5" Margin="0,0,20,0" HorizontalAlignment="Left"
+                            Text="自建节点教程"
+                            local:CustomEventService.EventType="打开网页" local:CustomEventService.EventData="https://easytier.cn/guide/installation.html" />
+                    </StackPanel>
+                </Grid>
+            </local:MyCard>
+            <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

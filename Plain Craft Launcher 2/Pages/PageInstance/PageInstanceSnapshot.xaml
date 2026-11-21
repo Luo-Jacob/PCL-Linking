@@ -1,0 +1,60 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageInstanceSnapshot"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,25,25,40">
+
+            <local:MyCard Title="创建实例快照" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{DynamicResource ColorBrush2}"
+                               Text="将当前实例的 Mod、配置文件、材质光影与游戏设置打包保存为时间点快照。调整 Mod 导致崩溃或配置出错时，可随时一键回滚到稳定状态。" />
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="快照名称" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyTextBox Grid.Column="1" x:Name="TextSnapshotName" HintText="例如：加装光影前稳定版" />
+                        <TextBlock Grid.Column="3" Text="备注说明" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyTextBox Grid.Column="4" x:Name="TextSnapshotNote" HintText="可选：记录当前变动内容" />
+                    </Grid>
+
+                    <TextBlock Text="选择要纳入快照的内容范围：" Margin="0,0,0,8" />
+                    <WrapPanel Margin="0,0,0,14">
+                        <local:MyCheckBox x:Name="ChkScopeMods" Checked="True" Text="mods（模组）" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkScopeConfig" Checked="True" Text="config / defaultconfigs（配置）" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkScopeResourcePacks" Checked="True" Text="resourcepacks（材质包）" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkScopeShaderPacks" Checked="True" Text="shaderpacks（光影包）" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkScopeOptions" Checked="True" Text="options.txt / servers.dat（按键与服务器列表）" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkScopeSaves" Checked="False" Text="saves（世界存档，体积可能较大）" Margin="0,0,18,6" />
+                    </WrapPanel>
+
+                    <local:MyCheckBox x:Name="ChkAutoBackupOnExit" Height="26" Margin="0,2,0,10"
+                                      Text="退出游戏时若存档有变动自动备份 saves（与「实例设置 -> 高级选项」同步）"
+                                      ToolTip="开启后，每次正常退出游戏且检测到 saves 目录被修改时，自动增量创建仅包含 saves 的安全快照" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <local:MyButton x:Name="BtnCreateSnapshot" Text="立即创建快照" MinWidth="136" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,12,0" />
+                        <local:MyButton x:Name="BtnOpenSnapshotsDir" Text="打开快照存储目录" MinWidth="136" Height="32" Padding="14,0" Margin="0,0,14,0" />
+                        <TextBlock x:Name="LabSnapshotStatus" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush2}" Text="" />
+                    </StackPanel>
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardSnapshotList" Title="历史快照列表 (0)" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <local:MyHint x:Name="HintNoSnapshots" Visibility="Collapsed" Theme="Blue"
+                                  Text="当前实例尚未创建任何快照。建议在安装或升级一批 Mod 前创建一个快照以便随时回滚。" />
+                    <StackPanel x:Name="PanSnapshotList" />
+                </StackPanel>
+            </local:MyCard>
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

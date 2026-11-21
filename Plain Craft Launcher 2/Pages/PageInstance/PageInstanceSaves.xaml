@@ -1,0 +1,129 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageInstanceSaves"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,25,25,40">
+
+            <local:MyCard Title="世界存档列表" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="LabSavesSummary" Grid.Column="0" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush2}"
+                                   Text="正在扫描当前实例的世界存档目录..." />
+                        <local:MyButton Grid.Column="1" x:Name="BtnOpenSavesRoot" Text="打开 saves 目录" MinWidth="120" Height="30" Padding="10,0" Margin="0,0,8,0" />
+                        <local:MyButton Grid.Column="2" x:Name="BtnRefreshSaves" Text="刷新列表" MinWidth="86" Height="30" Padding="10,0" ColorType="Highlight" />
+                    </Grid>
+                    <local:MyHint x:Name="HintNoSaves" Visibility="Collapsed" Theme="Blue" Margin="0,0,0,4"
+                                  Text="当前实例下还没有任何世界存档（saves 目录为空或尚不存在）。" />
+                    <StackPanel x:Name="PanSavesList" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardSaveDetail" Title="存档详情与配置" Margin="0,0,0,15" Visibility="Collapsed">
+                <StackPanel Margin="25,40,25,18">
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="72" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="64" Height="64" CornerRadius="6" ClipToBounds="True" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#22000000">
+                            <Image x:Name="ImgWorldIcon" Stretch="UniformToFill" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <TextBlock x:Name="LabDetailTitle" FontSize="15" FontWeight="SemiBold" Text="世界名称" />
+                            <TextBlock x:Name="LabDetailMeta" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Margin="0,4,0,0" Text="" />
+                            <TextBlock x:Name="LabDetailSeed" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Margin="0,3,0,0" Text="" />
+                        </StackPanel>
+                    </Grid>
+
+                    <WrapPanel Margin="0,0,0,12">
+                        <local:MyButton x:Name="BtnQuickPlayWorld" Text="直接进入该世界" MinWidth="124" Height="30" Padding="10,0" ColorType="Highlight" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnShortcutWorld" Text="桌面快捷方式" MinWidth="110" Height="30" Padding="10,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnCopySeed" Text="复制种子" MinWidth="92" Height="30" Padding="10,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnBackupWorld" Text="打包备份 (.zip)" MinWidth="124" Height="30" Padding="10,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnOpenWorldDir" Text="打开存档目录" MinWidth="112" Height="30" Padding="10,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnDeleteWorld" Text="移至回收站" MinWidth="100" Height="30" Padding="10,0" ColorType="Red" Margin="0,0,0,6" />
+                    </WrapPanel>
+
+                    <Border Height="1" Background="#22000000" Margin="0,0,0,14" />
+
+                    <TextBlock Text="基础规则编辑（写入 level.dat 并自动保留 level.dat_old 备份）" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="28" />
+                            <RowDefinition Height="10" />
+                            <RowDefinition Height="28" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="存档名称" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyTextBox Grid.Row="0" Grid.Column="1" x:Name="TextEditLevelName" />
+                        <TextBlock Grid.Row="0" Grid.Column="3" Text="游戏难度" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <local:MyComboBox Grid.Row="0" Grid.Column="4" x:Name="ComboEditDifficulty">
+                            <local:MyComboBoxItem Content="和平 (Peaceful)" Tag="0" />
+                            <local:MyComboBoxItem Content="简单 (Easy)" Tag="1" />
+                            <local:MyComboBoxItem Content="普通 (Normal)" Tag="2" />
+                            <local:MyComboBoxItem Content="困难 (Hard)" Tag="3" />
+                        </local:MyComboBox>
+                        <local:MyCheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckAllowCommands" Text="允许作弊 / 开启命令" VerticalAlignment="Center" />
+                        <local:MyCheckBox Grid.Row="2" Grid.Column="3" Grid.ColumnSpan="2" x:Name="CheckDifficultyLocked" Text="锁定当前难度" VerticalAlignment="Center" />
+                    </Grid>
+                    <local:MyButton x:Name="BtnSaveNbt" Text="保存存档设置到 level.dat" MinWidth="180" Height="32" Padding="14,0" ColorType="Highlight" HorizontalAlignment="Left" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardPlayerOverview" Title="玩家状态与背包概览" Margin="0,0,0,15" Visibility="Collapsed" CanSwap="True">
+                <StackPanel Margin="25,40,25,18">
+                    <TextBlock x:Name="LabPlayerSummary" TextWrapping="Wrap" Margin="0,0,0,8" Text="正在读取玩家数据..." />
+                    <TextBlock x:Name="LabInventorySummary" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Text="" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardMcaTrimmer" Title="区块清理瘦身 (Anvil .mca)" Margin="0,0,0,15" Visibility="Collapsed" CanSwap="True" IsSwaped="True">
+                <StackPanel Margin="25,40,25,18">
+                    <local:MyHint Theme="Blue" Margin="0,0,0,10"
+                                  Text="依据区块 NBT 中的 InhabitedTime（玩家累计停留时间）识别短暂路过/未开发的区块，支持在清理前自动备份，安全压缩存档体积。" />
+                    <WrapPanel VerticalAlignment="Center" Margin="0,0,0,10">
+                        <TextBlock Text="清理阈值：" VerticalAlignment="Center" Margin="0,0,8,6" />
+                        <local:MyComboBox x:Name="ComboMcaThreshold" Width="220" Height="28" Margin="0,0,16,6">
+                            <local:MyComboBoxItem Content="停留 ≤ 200 ticks (约 10 秒)" Tag="200" />
+                            <local:MyComboBoxItem Content="停留 ≤ 1200 ticks (约 1 分钟)" Tag="1200" IsSelected="True" />
+                            <local:MyComboBoxItem Content="停留 ≤ 6000 ticks (约 5 分钟)" Tag="6000" />
+                        </local:MyComboBox>
+                        <local:MyCheckBox x:Name="ChkMcaAutoBackup" Checked="True" Text="清理前自动备份 region/*.mca 到 RegionBackups" Margin="0,0,0,6" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,0,0,10">
+                        <local:MyButton x:Name="BtnScanMca" Text="扫描可清理区块" MinWidth="130" Height="30" Padding="12,0" ColorType="Highlight" Margin="0,0,10,4" />
+                        <local:MyButton x:Name="BtnTrimMca" Text="执行清理瘦身" MinWidth="124" Height="30" Padding="12,0" ColorType="Red" Margin="0,0,10,4" />
+                    </WrapPanel>
+                    <TextBlock x:Name="LabMcaStatus" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Text="点击「扫描可清理区块」预览主世界/下界/末地可回收的区块与空间大小。" />
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardDatapacks" Title="数据包管理 (datapacks)" Margin="0,0,0,15" Visibility="Collapsed">
+                <StackPanel Margin="25,40,25,18">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <local:MyButton x:Name="BtnAddDatapack" Text="导入数据包 (.zip)" MinWidth="136" Height="30" Padding="10,0" ColorType="Highlight" Margin="0,0,8,0" />
+                        <local:MyButton x:Name="BtnOpenDatapacksDir" Text="打开 datapacks 目录" MinWidth="148" Height="30" Padding="10,0" />
+                    </StackPanel>
+                    <local:MyHint x:Name="HintNoDatapacks" Visibility="Collapsed" Theme="Blue"
+                                  Text="该存档当前未安装任何数据包。你可以点击上方「导入数据包」添加 .zip 数据包。" />
+                    <StackPanel x:Name="PanDatapacksList" />
+                </StackPanel>
+            </local:MyCard>
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

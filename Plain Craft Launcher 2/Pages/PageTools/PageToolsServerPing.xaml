@@ -1,0 +1,70 @@
+<local:MyPageRight
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" x:Class="PageToolsServerPing"
+    PanScroll="PanBack">
+    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+        <StackPanel x:Name="PanMain" Margin="25,25,25,40">
+
+            <local:MyCard Title="即时服务器状态探测 (SLP 1.7+)" Margin="0,0,0,15">
+                <StackPanel Margin="25,40,25,18">
+                    <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,12"
+                               Text="基于纯 TCP Socket 实现 Minecraft Server List Ping 协议，无需启动游戏即可实时检测任意远程、本地或 EasyTier 联机服务器的在线状态、延迟、服务端版本、人数与 MOTD。" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="服务器地址" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <local:MyTextBox Grid.Column="1" x:Name="TextPingAddress" HintText="例：mc.hypixel.net 或 127.0.0.1:25565" MaxLength="180" />
+                        <TextBlock Grid.Column="3" Text="备注名" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <local:MyTextBox Grid.Column="4" x:Name="TextPingName" HintText="可选（加入关注列表时使用）" MaxLength="40" />
+                    </Grid>
+                    <WrapPanel Margin="0,0,0,10">
+                        <local:MyButton x:Name="BtnPingProbe" Text="立即探测" Height="30" Padding="14,0" ColorType="Highlight" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnPingAddWatch" Text="加入关注列表" Height="30" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnFillLocalServer" Text="填入本地开服地址" Height="30" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnFillLinkServer" Text="填入当前 EasyTier 联机地址" Height="30" Padding="12,0" Margin="0,0,0,6" />
+                    </WrapPanel>
+
+                    <Border x:Name="BorderProbeResult" CornerRadius="8" Padding="14,12" BorderThickness="1"
+                            Background="{DynamicResource ColorBrush8}" BorderBrush="{DynamicResource ColorBrush6}" Visibility="Collapsed">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="LabProbeTitle" Text="状态预览" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource ColorBrush1}" />
+                                <TextBlock Grid.Column="1" x:Name="LabProbeLatency" Text="" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource ColorBrush2}" />
+                            </Grid>
+                            <TextBlock x:Name="LabProbeDetails" Text="" FontSize="12.5" LineHeight="19" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,8" />
+                            <WrapPanel>
+                                <local:MyButton x:Name="BtnProbeWriteServersDat" Text="写入当前实例服务器列表 (servers.dat)" Height="28" Padding="12,0" Margin="0,0,8,4" />
+                                <local:MyButton x:Name="BtnProbeDirectLaunch" Text="用当前实例直连启动" Height="28" Padding="12,0" ColorType="Highlight" Margin="0,0,0,4" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardWatchlist" Title="关注服务器列表 (0)" Margin="0,0,0,15">
+                <Grid>
+                    <local:MyButton x:Name="BtnWatchRefreshAll" Text="全部刷新" Height="24" Padding="10,0" ColorType="Highlight"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,14,0" />
+                    <StackPanel Margin="25,40,25,18">
+                        <local:MyHint x:Name="HintWatchlistEmpty" Theme="Blue" Margin="0,0,0,4"
+                                      Text="暂无关注服务器。可在上方输入地址后点击「加入关注列表」，以后进入本页或点击「全部刷新」即可一键巡检全部服务器在线人数与延迟。" />
+                        <StackPanel x:Name="PanWatchlist" />
+                    </StackPanel>
+                </Grid>
+            </local:MyCard>
+
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

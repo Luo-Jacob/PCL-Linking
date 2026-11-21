@@ -1,0 +1,498 @@
+Public Class PageSetupUI
+
+    Private Sub PageSetupUI_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+        'PCL Linking：标题栏「默认」选项已移除，旧配置值 1 迁移为文本
+        If Settings.Get(Of Integer)("UiLogoType") = 1 Then Settings.Set("UiLogoType", 2)
+        '重复加载部分
+        PanBack.ScrollToHome()
+        LabFooterVersion.Text = $"{VersionDisplay} · 基于 PCL 2.14.0.0 开源版二次开发"
+        ThemeCheckAll(True)
+        BuildThemeCards()
+
+        AniControlEnabled += 1
+        Refresh() '#4826
+        AniControlEnabled -= 1
+
+        '非重复加载部分
+        Static Reloaded As Boolean = False
+        If Reloaded Then Return
+        Reloaded = True
+
+        SliderLoad()
+
+    End Sub
+    Public Sub Refresh()
+        Try
+            SettingService.RefreshSettings(Me)
+            BackgroundRefresh(False, False)
+
+            '标题栏
+            CheckLogoLeft.Visibility = If(RadioLogoType0.Checked, Visibility.Visible, Visibility.Collapsed)
+            PanLogoText.Visibility = If(RadioLogoType2.Checked, Visibility.Visible, Visibility.Collapsed)
+            PanLogoChange.Visibility = If(RadioLogoType3.Checked, Visibility.Visible, Visibility.Collapsed)
+
+            '背景音乐
+            MusicRefreshUI()
+
+            '主页
+            OnMainPageTypeChanged()
+        Catch ex As NullReferenceException
+            Logger.Error(ex, "个性化设置项存在异常，已被自动重置", LogBehavior.Alert)
+            Reset()
+        Catch ex As Exception
+            Logger.Error(ex, "重载个性化设置时出错")
+        End Try
+    End Sub
+    Public Sub Reset()
+        Try
+            SettingService.ResetSettings(Me)
+            Logger.Info("已初始化个性化设置！")
+            Hint("已初始化个性化设置", HintType.Green, False)
+        Catch ex As Exception
+            Logger.Error(ex, "初始化个性化设置失败", LogBehavior.Alert)
+        End Try
+        Refresh()
+    End Sub
+
+    '背景图片
+    Private Sub BtnUIBgOpen_Click(sender As Object, e As EventArgs) Handles BtnBackgroundOpen.Click
+        OpenExplorer(Paths.Base & "PCL Linking\Pictures\")
+    End Sub
+    Private Sub BtnBackgroundRefresh_Click(sender As Object, e As EventArgs) Handles BtnBackgroundRefresh.Click
+        BackgroundRefresh(True, True)
+    End Sub
+    Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
+        If IsNothing(PanBackgroundOpacity) Then Return
+        If Show Then
+            PanBackgroundOpacity.Visibility = Visibility.Visible
+            PanBackgroundBlur.Visibility = Visibility.Visible
+            PanBackgroundSuit.Visibility = Visibility.Visible
+            BtnBackgroundClear.Visibility = Visibility.Visible
+            CardBackground.Title = "背景图片（" & Count & " 张）"
+        Else
+            PanBackgroundOpacity.Visibility = Visibility.Collapsed
+            PanBackgroundBlur.Visibility = Visibility.Collapsed
+            PanBackgroundSuit.Visibility = Visibility.Collapsed
+            BtnBackgroundClear.Visibility = Visibility.Collapsed
+            CardBackground.Title = "背景图片"
+        End If
+        CardBackground.TriggerForceResize()
+    End Sub
+    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
+        If MyMsgBox("即将删除背景图片文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
+            DirectoryUtils.Delete(Paths.Base & "PCL Linking\Pictures")
+            BackgroundRefresh(False, True)
+            Hint("背景图片已清空！", HintType.Green)
+        End If
+    End Sub
+    ''' <summary>
+    ''' 刷新背景图片及设置页 UI。
+    ''' </summary>
+    ''' <param name="IsHint">是否显示刷新提示。</param>
+    ''' <param name="Refresh">是否刷新图片显示。</param>
+    Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
+        Try
+
+            '获取可用的图片文件
+            DirectoryUtils.Create(Paths.Base & "PCL Linking\Pictures\")
+            Dim Pic As New List(Of String)
+            For Each File In DirectoryUtils.EnumerateFiles(Paths.Base & "PCL Linking\Pictures\", True)
+                Dim Extension As String = PathUtils.GetExtension(File)
+                If Extension <> "ini" AndAlso Extension <> "db" Then Pic.Add(File) '文件夹可能会被加入 .ini 和 thumbs.db
+            Next
+            '加载
+            If Not Pic.Any() Then
+                If Refresh Then
+                    If FrmMain.ImgBack.Visibility = Visibility.Collapsed Then
+                        If IsHint Then Hint("未检测到可用背景图片！", HintType.Red)
+                    Else
+                        FrmMain.ImgBack.Visibility = Visibility.Collapsed
+                        If IsHint Then Hint("背景图片已清除！", HintType.Green)
+                    End If
+                End If
+                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(False, 0)
+            Else
+                If Refresh Then
+                    Dim Address As String = RandomOne(Pic)
+                    Try
+                        Logger.Info($"加载背景图片：{Address}")
+                        FrmMain.ImgBack.Background = New MyBitmap(Address)
+                        FrmMain.ImgBack.Visibility = Visibility.Visible
+                        FrmMain.UpdateBackgroundAndTitleBar()
+                        If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
+                    Catch ex As Exception
+                        If ex.Message.Contains("参数无效") Then
+                            Logger.Error($"刷新背景图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{Address}", LogBehavior.Alert)
+                        Else
+                            Logger.Error(ex, $"刷新背景图片失败（{Address}）", LogBehavior.Alert)
+                        End If
+                    End Try
+                End If
+                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(True, Pic.Count)
+            End If
+
+        Catch ex As Exception
+            Logger.Error(ex, "刷新背景图片时出现未知错误")
+        End Try
+    End Sub
+
+    '顶部栏
+    Private Sub BtnLogoChange_Click(sender As Object, e As EventArgs) Handles BtnLogoChange.Click
+        Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpg", "jpeg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
+        If String.IsNullOrEmpty(FileName) Then Return
+        Dim TargetPath As String = Paths.Base & "PCL Linking\Logo.png"
+        Try
+            '复制文件
+            FileUtils.Copy(FileName, TargetPath)
+            '设置当前显示
+            FrmMain.ImageTitleLogo.Source = Nothing '防止因为 Source 属性前后的值相同而不更新 (#5628)
+            FrmMain.ImageTitleLogo.Source = TargetPath
+        Catch ex As Exception
+            If ex.Message.Contains("参数无效") Then
+                Logger.Error($"改变标题栏图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{TargetPath}", LogBehavior.Alert)
+            Else
+                Logger.Error(ex, "设置标题栏图片失败", LogBehavior.Alert)
+            End If
+            FrmMain.ImageTitleLogo.Source = Nothing
+        End Try
+    End Sub
+    Private Sub RadioLogoType3_Check(sender As Object, e As RouteEventArgs) Handles RadioLogoType3.PreviewCheck
+        If Not (AniControlEnabled = 0 AndAlso e.RaiseByMouse) Then Return
+Refresh:
+        '已有图片则不再选择
+        Dim TargetPath As String = Paths.Base & "PCL Linking\Logo.png"
+        If FileUtils.Exists(TargetPath) Then
+            Try
+                FrmMain.ImageTitleLogo.Source = Nothing '防止因为 Source 属性前后的值相同而不更新 (#5628)
+                FrmMain.ImageTitleLogo.Source = TargetPath
+            Catch ex As Exception
+                If ex.Message.Contains("参数无效") Then
+                    Logger.Error($"改变标题栏图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{TargetPath}", LogBehavior.Alert)
+                Else
+                    Logger.Error(ex, "调整标题栏图片失败", LogBehavior.Alert)
+                End If
+                FrmMain.ImageTitleLogo.Source = Nothing
+                e.Handled = True
+                Try
+                    FileUtils.Delete(TargetPath)
+                Catch exx As Exception
+                    Logger.Error(exx, "清理错误的标题栏图片失败", LogBehavior.Alert)
+                End Try
+            End Try
+            Return
+        End If
+        '没有图片则要求选择
+        Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpeg", "jpg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
+        If String.IsNullOrEmpty(FileName) Then
+            FrmMain.ImageTitleLogo.Source = Nothing
+            e.Handled = True
+        Else
+            Try
+                FileUtils.Copy(FileName, TargetPath)
+                GoTo Refresh
+            Catch ex As Exception
+                Logger.Error(ex, "复制标题栏图片失败", LogBehavior.Alert)
+            End Try
+        End If
+    End Sub
+    Private Sub BtnLogoDelete_Click(sender As Object, e As EventArgs) Handles BtnLogoDelete.Click
+        Try
+            FileUtils.Delete(Paths.Base & "PCL Linking\Logo.png")
+            RadioLogoType2.SetChecked(True, True)
+            Hint("标题栏图片已清空！", HintType.Green)
+        Catch ex As Exception
+            Logger.Error(ex, "清空标题栏图片失败", LogBehavior.Alert)
+        End Try
+    End Sub
+
+    '背景音乐
+    Private Sub BtnMusicOpen_Click(sender As Object, e As EventArgs) Handles BtnMusicOpen.Click
+        OpenExplorer(Paths.Base & "PCL Linking\Musics\")
+    End Sub
+    Private Sub BtnMusicRefresh_Click(sender As Object, e As EventArgs) Handles BtnMusicRefresh.Click
+        MusicRefreshPlay(True)
+    End Sub
+    Public Sub MusicRefreshUI()
+        If PanBackgroundOpacity Is Nothing Then Return
+        If MusicAllList.Any Then
+            PanMusicVolume.Visibility = Visibility.Visible
+            PanMusicDetail.Visibility = Visibility.Visible
+            BtnMusicClear.Visibility = Visibility.Visible
+            CardMusic.Title = "背景音乐（" &
+                DirectoryUtils.EnumerateFiles(Paths.Base & "PCL Linking\Musics\", True).Count(Function(f) Not {"ini", "jpg", "txt", "cfg", "lrc", "db", "png"}.Contains(PathUtils.GetExtension(f))) &
+                " 首）"
+        Else
+            PanMusicVolume.Visibility = Visibility.Collapsed
+            PanMusicDetail.Visibility = Visibility.Collapsed
+            BtnMusicClear.Visibility = Visibility.Collapsed
+            CardMusic.Title = "背景音乐"
+        End If
+        CardMusic.TriggerForceResize()
+    End Sub
+    Private Sub BtnMusicClear_Click(sender As Object, e As EventArgs) Handles BtnMusicClear.Click
+        If MyMsgBox("即将删除背景音乐文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
+            RunInThread(
+            Sub()
+                Hint("正在删除背景音乐……")
+                '停止播放音乐
+                MusicNAudio = Nothing
+                MusicWaitingList = New List(Of String)
+                MusicAllList = New List(Of String)
+                Thread.Sleep(200)
+                '删除文件
+                Try
+                    DirectoryUtils.Delete(Paths.Base & "PCL Linking\Musics")
+                    Hint("背景音乐已删除！", HintType.Green)
+                Catch ex As Exception
+                    Logger.Error(ex, "删除背景音乐失败", LogBehavior.Alert)
+                End Try
+                Try
+                    DirectoryUtils.Create(Paths.Base & "PCL Linking\Musics\")
+                    RunInUi(Sub() MusicRefreshPlay(False))
+                Catch ex As Exception
+                    Logger.Error(ex, "重建背景音乐文件夹失败", LogBehavior.Alert)
+                End Try
+            End Sub)
+        End If
+    End Sub
+    Private Sub CheckMusicStart_Change() Handles CheckMusicStart.Change
+        If AniControlEnabled <> 0 Then Return
+        If CheckMusicStart.Checked Then CheckMusicStop.Checked = False
+    End Sub
+    Private Sub CheckMusicStop_Change() Handles CheckMusicStop.Change
+        If AniControlEnabled <> 0 Then Return
+        If CheckMusicStop.Checked Then CheckMusicStart.Checked = False
+    End Sub
+
+    '主页
+    Private Sub BtnCustomFile_Click(sender As Object, e As EventArgs) Handles BtnCustomFile.Click
+        Try
+            If FileUtils.Exists(Paths.Base & "PCL Linking\Custom.xaml") Then
+                If MyMsgBox("当前已存在布局文件，继续生成教学文件将会覆盖现有布局文件！", "覆盖确认", "继续", "取消", IsWarn:=True) = 2 Then Return
+            End If
+            ExtractResources(Paths.Base & "PCL Linking\Custom.xaml", "Custom")
+            Hint("教学文件已生成！", HintType.Green)
+            OpenExplorer(Paths.Base & "PCL Linking\Custom.xaml")
+        Catch ex As Exception
+            Logger.Error(ex, "生成教学文件失败")
+        End Try
+    End Sub
+    Private Sub BtnCustomRefresh_Click() Handles BtnCustomRefresh.Click
+        FrmLaunchRight.ForceRefresh()
+        Hint("已刷新主页！", HintType.Green)
+    End Sub
+    Private Sub BtnCustomTutorial_Click(sender As Object, e As EventArgs) Handles BtnCustomTutorial.Click
+        MyMsgBox("1. 点击 生成教学文件 按钮，这会在 PCL Linking 文件夹下生成 Custom.xaml 布局文件。" & vbCrLf &
+                 "2. 使用记事本等工具打开这个文件并进行修改，修改完记得保存。" & vbCrLf &
+                 "3. 点击 刷新主页 按钮，查看主页现在长啥样了。" & vbCrLf &
+                 vbCrLf &
+                 "你可以在生成教学文件后直接刷新主页，对照着进行修改，更有助于理解。" & vbCrLf &
+                 "直接将主页文件拖进 PCL Linking 窗口也可以快捷加载。", "主页自定义教程")
+    End Sub
+    Public Shared Sub OnMainPageTypeChanged()
+        If FrmSetupUI Is Nothing Then Return
+        Select Case CInt(Settings.Get(Of Integer)("UiCustomType"))
+            Case 0 '无
+                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
+                FrmSetupUI.HintCustom.Visibility = Visibility.Collapsed
+                FrmSetupUI.HintCustomWarn.Visibility = Visibility.Collapsed
+            Case 1 '本地
+                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Visible
+                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
+                FrmSetupUI.HintCustom.Visibility = Visibility.Visible
+                FrmSetupUI.HintCustomWarn.Visibility = If(Settings.Get(Of Boolean)("HintCustomWarn"), Visibility.Collapsed, Visibility.Visible)
+                FrmSetupUI.HintCustom.Text = $"从 PCL Linking 文件夹下的 Custom.xaml 读取主页内容。{vbCrLf}你可以手动编辑该文件，向主页添加文本、图片、常用网站、快捷启动等功能。"
+                CustomEventService.SetEventType(FrmSetupUI.HintCustom, CustomEvent.EventType.None)
+            Case 2 '联网
+                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomNet.Visibility = Visibility.Visible
+                FrmSetupUI.HintCustom.Visibility = Visibility.Visible
+                FrmSetupUI.HintCustomWarn.Visibility = If(Settings.Get(Of Boolean)("HintCustomWarn"), Visibility.Collapsed, Visibility.Visible)
+                FrmSetupUI.HintCustom.Text = $"从指定网址联网获取主页内容。服主也可以用于动态更新服务器公告。{vbCrLf}如果你制作了稳定运行的联网主页，可以点击这条提示前往上游 PCL 仓库投稿！"
+                CustomEventService.SetEventType(FrmSetupUI.HintCustom, CustomEvent.EventType.打开网页)
+                CustomEventService.SetEventData(FrmSetupUI.HintCustom, "https://github.com/Meloong-Git/PCL/discussions/2528")
+            Case 3 '预设
+                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Visible
+                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
+                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
+                FrmSetupUI.HintCustom.Visibility = Visibility.Collapsed
+                FrmSetupUI.HintCustomWarn.Visibility = Visibility.Collapsed
+        End Select
+        FrmSetupUI.CardCustom.TriggerForceResize()
+    End Sub
+    Private Sub BtnCustomFolder_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnCustomFolder.Click
+        Dim CustomPath As String = Paths.Base & "PCL Linking\Custom.xaml"
+        If FileUtils.Exists(CustomPath) Then
+            OpenExplorer(CustomPath)
+        Else
+            OpenExplorer(Paths.Base & "PCL Linking\")
+        End If
+    End Sub
+
+    '主题（PCL Linking 重写：纯色卡直选，不显示名称，全部可用，无需赞助或解密）
+    '0-11 预设色，12 滑稽彩，13 欧皇彩（界面已移除，仅在读取旧配置时兼容），14 自定义
+    Private Const ThemeCount As Integer = 15 '色卡编号上限（不含），0-14
+
+    ''' <summary>
+    ''' 按主题编号生成预览色：0-11 取预设主色，12 彩虹，13 随机，14 跟随自定义滑条。
+    ''' </summary>
+    Private Function ThemePreviewBrush(Id As Integer) As Brush
+        Try
+            Select Case Id
+                Case 12
+                    Dim G As New LinearGradientBrush With {.StartPoint = New Point(0, 0), .EndPoint = New Point(1, 0)}
+                    For k = 0 To 5
+                        G.GradientStops.Add(New GradientStop With {.Offset = k / 5.0, .Color = New MyColor().FromHSL2(k * 60, 92, 55)})
+                    Next
+                    Return G
+                Case 13
+                    Return New MyColor().FromHSL2(New Random(Guid.NewGuid().GetHashCode()).Next(0, 360), 90, 55)
+                Case 14
+                    Return Color3
+            End Select
+            Dim Preset As Integer() = ThemePresets(Math.Max(0, Math.Min(ThemePresets.Length - 1, Id)))
+            Return New MyColor().FromHSL2(Preset(0), Preset(1), 55 + Preset(2))
+        Catch
+            Return New MyColor(19, 112, 243)
+        End Try
+    End Function
+
+    Private Sub BuildThemeCards()
+        Try
+            If PanThemeList IsNot Nothing Then PanThemeList.Children.Clear()
+            Settings.Set("UiLauncherTheme", 0)
+            RefreshThemeCards()
+            RefreshCustomSliders()
+        Catch ex As Exception
+            Logger.Error(ex, "初始化主题状态失败")
+        End Try
+    End Sub
+
+    Private Sub SelectTheme(Id As Integer)
+        Settings.Set("UiLauncherTheme", 0)
+        ThemeNow = 0
+        ThemeRefresh(0)
+        RefreshThemeCards()
+        RefreshCustomSliders()
+        CardLauncher.TriggerForceResize()
+    End Sub
+
+    Private Sub RefreshThemeCards()
+    End Sub
+
+    Private Sub RefreshCustomSliders()
+        Try
+            If LabLauncherHue Is Nothing Then Return
+            LabLauncherHue.Visibility = Visibility.Collapsed
+            SliderLauncherHue.Visibility = Visibility.Collapsed
+            LabLauncherSat.Visibility = Visibility.Collapsed
+            SliderLauncherSat.Visibility = Visibility.Collapsed
+            LabLauncherDelta.Visibility = Visibility.Collapsed
+            SliderLauncherDelta.Visibility = Visibility.Collapsed
+            LabLauncherLight.Visibility = Visibility.Collapsed
+            SliderLauncherLight.Visibility = Visibility.Collapsed
+        Catch ex As Exception
+            Logger.Error(ex, "隐藏自定义配色控件失败")
+        End Try
+    End Sub
+
+    Private Sub HSL_Change() Handles SliderLauncherHue.Change, SliderLauncherLight.Change, SliderLauncherSat.Change, SliderLauncherDelta.Change
+        If AniControlEnabled <> 0 OrElse SliderLauncherSat Is Nothing OrElse Not SliderLauncherSat.IsLoaded Then Return
+        'PCL Linking：把滑条值写回设置，再按“自定义”主题重新派生配色
+        Settings.Set("UiLauncherHue", SliderLauncherHue.Value)
+        Settings.Set("UiLauncherSat", SliderLauncherSat.Value)
+        Settings.Set("UiLauncherLight", SliderLauncherLight.Value)
+        Settings.Set("UiLauncherDelta", SliderLauncherDelta.Value)
+        ThemeRefresh()
+        RefreshThemeCards()
+    End Sub
+
+#Region "功能隐藏"
+
+    Private Shared _HiddenForceShow As Boolean = False
+    ''' <summary>
+    ''' 是否强制显示被禁用的功能。
+    ''' </summary>
+    Public Shared Property HiddenForceShow As Boolean
+        Get
+            Return _HiddenForceShow
+        End Get
+        Set(value As Boolean)
+            _HiddenForceShow = value
+            HiddenRefresh()
+        End Set
+    End Property
+
+    ''' <summary>
+    ''' 更新功能隐藏带来的显示变化。
+    ''' </summary>
+    Public Shared Sub HiddenRefresh() Handles Me.Loaded
+        If FrmMain.PanTitleSelect Is Nothing OrElse Not FrmMain.PanTitleSelect.IsLoaded Then Return
+        Try
+            '顶部栏
+            If Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageDownload") AndAlso Settings.Get(Of Boolean)("UiHiddenPageLink") AndAlso Settings.Get(Of Boolean)("UiHiddenPageSetup") Then
+                '顶部栏已被全部隐藏
+                FrmMain.PanTitleSelect.Visibility = Visibility.Collapsed
+            Else
+                '顶部栏未被全部隐藏
+                FrmMain.PanTitleSelect.Visibility = Visibility.Visible
+                FrmMain.BtnTitleSelect1.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageDownload"), Visibility.Collapsed, Visibility.Visible)
+                FrmMain.BtnTitleSelect2.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageLink"), Visibility.Collapsed, Visibility.Visible)
+                FrmMain.BtnTitleSelect3.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageSetup"), Visibility.Collapsed, Visibility.Visible)
+            End If
+            '功能
+            FrmLaunchLeft.RefreshButtonsUI()
+            'PCL Linking：「功能隐藏」卡片已删除，不再需要它的显示控制
+            '版本设置子页面
+            If FrmInstanceLeft IsNot Nothing Then
+                FrmInstanceLeft.ItemModify.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenFunctionInstanceModify"), Visibility.Collapsed, Visibility.Visible)
+            End If
+            '各个页面的入口
+            If FrmMain.PageCurrent = FormMain.PageType.InstanceSelect Then FrmSelectRight.BtnEmptyDownload_Loaded()
+            If FrmMain.PageCurrent = FormMain.PageType.Launch Then FrmLaunchLeft.RefreshButtonsUI()
+            If FrmMain.PageCurrent = FormMain.PageType.InstanceSetup AndAlso FrmInstanceModDisabled IsNot Nothing Then FrmInstanceModDisabled.BtnDownload_Loaded()
+        Catch ex As Exception
+            Logger.Error(ex, "刷新功能隐藏项目失败")
+        End Try
+    End Sub
+
+    'UI 协同改变
+    'PCL Linking：「设置 子页面」已合并为单一的个性化页，不再需要子页面联动逻辑
+
+#End Region
+
+    '滑动条
+    Private Sub SliderLoad()
+        SliderMusicVolume.GetHintText = Function(v) Math.Ceiling(v * 0.1) & "%"
+        SliderLauncherTransparent.GetHintText = Function(v) Math.Round(40 + v * 0.1) & "%"
+        SliderLauncherHue.GetHintText = Function(v) v & "°"
+        SliderLauncherSat.GetHintText = Function(v) v & "%"
+        SliderLauncherDelta.GetHintText =
+        Function(Value As Integer) As String
+            If Value > 90 Then
+                Return "+" & (Value - 90)
+            ElseIf Value = 90 Then
+                Return 0
+            Else
+                Return Value - 90
+            End If
+        End Function
+        SliderLauncherLight.GetHintText =
+        Function(Value As Integer) As String
+            If Value > 20 Then
+                Return "+" & (Value - 20)
+            ElseIf Value = 20 Then
+                Return 0
+            Else
+                Return Value - 20
+            End If
+        End Function
+        SliderBackgroundOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
+        SliderBackgroundBlur.GetHintText = Function(v) v & " 像素"
+    End Sub
+
+End Class
