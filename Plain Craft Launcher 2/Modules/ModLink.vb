@@ -34,6 +34,11 @@ Public Module ModLink
     Public Const LinkServerAddress As String = "10.114.114.114"
 
     ''' <summary>
+    ''' EasyTier 虚网点对点辅助控制/直传端口（Mod 一致性握手与大文件/存档接力直传）。
+    ''' </summary>
+    Public Const LinkControlPort As Integer = EasyTierSideChannelCore.DefaultSideChannelPort
+
+    ''' <summary>
     ''' 写进邀请码的发现节点编号。
     ''' 两端只需要一致即可；使用节点池时任意非零值都行，但 0 会被判定为“要求自定义节点”。
     ''' </summary>

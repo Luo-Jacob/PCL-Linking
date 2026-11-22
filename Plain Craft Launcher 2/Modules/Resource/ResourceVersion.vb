@@ -78,7 +78,7 @@ Public Class ResourceVersion
     ''' </summary>
     Public ReadOnly Property DownloadAvailable As Boolean
         Get
-            Return FileName IsNot Nothing AndAlso DownloadUrls IsNot Nothing
+            Return FileName IsNot Nothing AndAlso ((DownloadUrls IsNot Nothing AndAlso DownloadUrls.Any()) OrElse Not String.IsNullOrEmpty(ExternalOnlyUrl))
         End Get
     End Property
     ''' <summary>
@@ -90,7 +90,15 @@ Public Class ResourceVersion
     ''' </summary>
     Public DownloadUrls As List(Of String)
     ''' <summary>
-    ''' 对应文件的 SHA1 或 MD5。固定为小写。
+    ''' 仅支持前往网页下载的外部链接（例如 SpigotMC 付费或外链非直链插件）。
+    ''' </summary>
+    Public ExternalOnlyUrl As String = Nothing
+    ''' <summary>
+    ''' 直接下载失败或被拦截时的网页备用链接。
+    ''' </summary>
+    Public ExternalFallbackUrl As String = Nothing
+    ''' <summary>
+    ''' 对应文件的 SHA1 / SHA256 / MD5。固定为小写。
     ''' </summary>
     Public Hash As String = Nothing
     ''' <summary>
@@ -227,6 +235,37 @@ Public Class ResourceVersion
         End With
         Return Result
     End Function
+    Private Shared Function SanitizeJarName(ProjectName As String, VersionName As String) As String
+        Dim BaseName As String = $"{ProjectName}-{VersionName}".Trim()
+        For Each Ch In Path.GetInvalidFileNameChars()
+            BaseName = BaseName.Replace(Ch, "-"c)
+        Next
+        BaseName = BaseName.Trim("."c, " "c)
+        If String.IsNullOrEmpty(BaseName) Then BaseName = "plugin"
+        If Not BaseName.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) Then BaseName &= ".jar"
+        Return BaseName
+    End Function
+
+    Private Shared Function NormalizeStandardGameVersions(RawItems As IEnumerable(Of String)) As List(Of String)
+        Dim Collected As New List(Of String)
+        If RawItems IsNot Nothing Then
+            For Each Raw In RawItems
+                If String.IsNullOrWhiteSpace(Raw) Then Continue For
+                For Each Part In Raw.Split({","c, "-"c, " "c}, StringSplitOptions.RemoveEmptyEntries)
+                    Dim Clean = Part.Trim().Replace(".x", "").Replace(".*", "")
+                    If McVersion.IsStandardFormat(Clean) Then Collected.Add(Clean)
+                Next
+            Next
+        End If
+        Collected = Collected.Distinct().ToList()
+        If Collected.Count > 1 Then
+            Collected = Collected.SortByComparison(AddressOf McUtils.CompareVersionGE).ToList()
+        ElseIf Collected.Count = 0 Then
+            Collected.Add("未知版本")
+        End If
+        Return Collected
+    End Function
+
     ''' <summary>
     ''' 从项目 ID 获取其下的全部版本列表，并获取其前置项目信息。
     ''' </summary>
@@ -237,35 +276,161 @@ Public Class ResourceVersion
         Dim Result As List(Of ResourceVersion) = Nothing
         If Not ProjectFilesCache.TryGetValue(ProjectId, Result) Then
             Logger.Info($"开始获取项目版本列表：{ProjectId}")
-            Dim ResultJsonArray As JArray = Nothing
-            If Platform = ResourcePlatforms.CurseForge Then
-                For RetryCount As Integer = 0 To 2
-                    Dim ResultJson As JObject = DlModRequest($"https://api.curseforge.com/v1/mods/{ProjectId}/files?pageSize=" &
-                    (10000 + RetryCount)) '每次重试多请求一个文件，以避免触发 CDN 缓存
-                    'HMCL 一次性请求了 10000 个文件，虽然不知道会不会出问题但先这样吧……（#5522）
-                    '之前只请求一部分文件的方法备份如下：
-                    'If TargetProject.Type = CompType.Mod Then 'Mod 使用每个版本最新的文件
-                    '    ResultJsonArray = DlModRequest("https://api.curseforge.com/v1/mods/files", HttpMethod.Post, "{""fileIds"": [" & Join(TargetProject.CurseForgeFileIds, ",") & "]}", "application/json")("data")
-                    'Else '否则使用全部文件
-                    '    ResultJsonArray = DlModRequest($"https://api.curseforge.com/v1/mods/{ProjectId}/files?pageSize=999")("data")
-                    'End If
-                    If ResultJson("pagination")("resultCount").ToObject(Of Integer) = ResultJson("pagination")("totalCount").ToObject(Of Integer) Then
-                        ResultJsonArray = ResultJson("data")
-                        Exit For
-                    ElseIf RetryCount < 2 Then
-                        Logger.Warn($"CurseForge 返回的资源版本列表存在缺失，即将进行第 {RetryCount + 1} 次重试") '#6224
-                        Logger.Info($"返回的原始内容如下：{vbCrLf}{ResultJson}")
+            Dim Parsed As List(Of ResourceVersion)
+            If Platform = ResourcePlatforms.Hangar Then
+                Dim HangarJson As JObject = DlModRequest($"https://hangar.papermc.io/api/v1/projects/{ProjectId}/versions?limit=25&offset=0")
+                Dim HangarArr = If(TryCast(HangarJson("result"), JArray), New JArray)
+                Parsed = New List(Of ResourceVersion)
+                For Each V As JObject In HangarArr
+                    Dim VerName As String = If(V("name")?.ToString(), "").Trim()
+                    Dim Item As New ResourceVersion With {
+                        .ResourceType = TargetProject.Types,
+                        .Id = $"{ProjectId}@{VerName}",
+                        .Version = VerName,
+                        .Display = If(String.IsNullOrWhiteSpace(VerName), TargetProject.RawName, VerName),
+                        .ReleaseDate = If(V("createdAt") IsNot Nothing, V("createdAt").ToObject(Of Date), TargetProject.LastUpdate),
+                        .DownloadCount = If(V("stats")?("totalDownloads")?.ToObject(Of Integer)(), 0)
+                    }
+                    Dim ChannelName As String = If(V("channel")?("name")?.ToString(), "Release").ToLowerInvariant()
+                    If ChannelName.Contains("alpha") Then
+                        Item.ReleaseType = ReleaseTypes.Alpha
+                    ElseIf ChannelName.Contains("beta") OrElse ChannelName.Contains("snapshot") Then
+                        Item.ReleaseType = ReleaseTypes.Beta
                     Else
-                        Logger.Info($"CurseForge 返回的资源版本列表存在缺失，返回的原始内容如下：{vbCrLf}{ResultJson}")
-                        Throw New Exception("CurseForge 返回的资源版本列表存在缺失")
+                        Item.ReleaseType = ReleaseTypes.Release
                     End If
+                    Dim DownloadsObj = TryCast(V("downloads"), JObject)
+                    Dim DlObj As JObject = Nothing
+                    If DownloadsObj IsNot Nothing Then
+                        For Each PrefKey In {"PAPER", "VELOCITY", "WATERFALL"}
+                            DlObj = TryCast(DownloadsObj(PrefKey), JObject)
+                            If DlObj IsNot Nothing Then Exit For
+                        Next
+                        If DlObj Is Nothing Then
+                            DlObj = DownloadsObj.Properties().Select(Function(p) TryCast(p.Value, JObject)).FirstOrDefault(Function(o) o IsNot Nothing)
+                        End If
+                    End If
+                    If DlObj IsNot Nothing Then
+                        Dim FileInfoObj = TryCast(DlObj("fileInfo"), JObject)
+                        Dim FileInfoName = FileInfoObj?("name")?.ToString()
+                        Dim SizeBytes As Long = If(FileInfoObj?("sizeBytes") IsNot Nothing, FileInfoObj("sizeBytes").ToObject(Of Long), -1)
+                        Item.Size = If(SizeBytes > 0 AndAlso SizeBytes <= Integer.MaxValue, CInt(SizeBytes), -1)
+                        Dim Sha256 = FileInfoObj?("sha256Hash")?.ToString()?.Trim()?.ToLowerInvariant()
+                        If Not String.IsNullOrEmpty(Sha256) AndAlso Sha256.Length = 64 Then Item.Hash = Sha256
+                        Dim DlUrl = DlObj("downloadUrl")?.ToString()
+                        Dim ExtUrl = DlObj("externalUrl")?.ToString()
+                        Item.FileName = If(Not String.IsNullOrWhiteSpace(FileInfoName), FileInfoName, SanitizeJarName(TargetProject.RawName, VerName))
+                        If Not String.IsNullOrWhiteSpace(DlUrl) Then
+                            Item.DownloadUrls = New List(Of String) From {DlUrl}
+                            Item.ExternalFallbackUrl = If(Not String.IsNullOrWhiteSpace(ExtUrl), ExtUrl, TargetProject.Website)
+                        ElseIf Not String.IsNullOrWhiteSpace(ExtUrl) Then
+                            If ExtUrl.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) Then
+                                Item.DownloadUrls = New List(Of String) From {ExtUrl}
+                                Item.ExternalFallbackUrl = TargetProject.Website
+                            Else
+                                Item.ExternalOnlyUrl = ExtUrl
+                            End If
+                        End If
+                    End If
+                    Dim DepVers As New List(Of String)
+                    Dim PlatDepsObj = TryCast(V("platformDependencies"), JObject)
+                    If PlatDepsObj IsNot Nothing Then
+                        For Each Prop In PlatDepsObj.Properties()
+                            Dim Arr = TryCast(Prop.Value, JArray)
+                            If Arr IsNot Nothing Then
+                                For Each Tok In Arr
+                                    DepVers.Add(Tok.ToString())
+                                Next
+                            End If
+                        Next
+                    End If
+                    Item.GameVersions = NormalizeStandardGameVersions(DepVers)
+                    If Item.DownloadAvailable Then Parsed.Add(Item)
                 Next
-            Else 'Modrinth
-                ResultJsonArray = DlModRequest($"https://api.modrinth.com/v2/project/{ProjectId}/version?include_changelog=false")
+                Parsed = Parsed.DistinctBy(Function(a) a.Id).ToList()
+            ElseIf Platform = ResourcePlatforms.SpigotMC Then
+                Dim RawId = If(ProjectId.StartsWith("spigot:", StringComparison.OrdinalIgnoreCase), ProjectId.Substring(7), ProjectId)
+                Dim Detail As JObject = DlModRequest($"https://api.spiget.org/v2/resources/{RawId}")
+                Dim VersArr As JArray = DlModRequest($"https://api.spiget.org/v2/resources/{RawId}/versions?size=25&sort=-releaseDate")
+                Dim IsPremium As Boolean = If(Detail("premium")?.ToObject(Of Boolean)(), False)
+                Dim IsExternal As Boolean = If(Detail("external")?.ToObject(Of Boolean)(), False)
+                Dim ExtUrl As String = Detail("file")?("externalUrl")?.ToString()
+                Dim TestedRaw = If(TryCast(Detail("testedVersions"), JArray)?.Select(Function(t) t.ToString()), {})
+                Dim TestedVers = NormalizeStandardGameVersions(TestedRaw)
+                If VersArr Is Nothing OrElse VersArr.Count = 0 Then
+                    Dim LatestId = Detail("version")?("id")?.ToString()
+                    If Not String.IsNullOrWhiteSpace(LatestId) Then
+                        VersArr = New JArray(New JObject From {
+                            {"id", LatestId},
+                            {"name", LatestId},
+                            {"downloads", Detail("downloads")},
+                            {"releaseDate", Detail("updateDate")}
+                        })
+                    Else
+                        VersArr = New JArray()
+                    End If
+                End If
+                Parsed = New List(Of ResourceVersion)
+                For Each V As JObject In VersArr
+                    Dim VerId = If(V("id")?.ToString(), "")
+                    Dim VerName = If(Not String.IsNullOrWhiteSpace(V("name")?.ToString()), V("name").ToString().Trim(), VerId)
+                    Dim RelSec As Long = If(V("releaseDate") IsNot Nothing, V("releaseDate").ToObject(Of Long), 0)
+                    Dim Item As New ResourceVersion With {
+                        .ResourceType = TargetProject.Types,
+                        .Id = $"spigot:{RawId}@{VerId}",
+                        .Version = VerName,
+                        .Display = VerName,
+                        .FileName = SanitizeJarName(TargetProject.RawName, VerName),
+                        .ReleaseDate = If(RelSec > 0, DateTimeOffset.FromUnixTimeSeconds(RelSec).LocalDateTime, TargetProject.LastUpdate),
+                        .DownloadCount = If(V("downloads")?.ToObject(Of Integer)(), 0),
+                        .ReleaseType = ReleaseTypes.Release,
+                        .GameVersions = TestedVers.ToList(),
+                        .Size = -1,
+                        .Hash = Nothing
+                    }
+                    If IsPremium Then
+                        Item.ExternalOnlyUrl = TargetProject.Website
+                    ElseIf IsExternal Then
+                        If Not String.IsNullOrWhiteSpace(ExtUrl) AndAlso ExtUrl.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) Then
+                            Item.DownloadUrls = New List(Of String) From {ExtUrl}
+                            Item.ExternalFallbackUrl = TargetProject.Website
+                        Else
+                            Item.ExternalOnlyUrl = If(Not String.IsNullOrWhiteSpace(ExtUrl), ExtUrl, TargetProject.Website)
+                        End If
+                    Else
+                        Item.DownloadUrls = New List(Of String) From {
+                            $"https://api.spiget.org/v2/resources/{RawId}/versions/{VerId}/download",
+                            $"https://api.spiget.org/v2/resources/{RawId}/download"
+                        }
+                        Item.ExternalFallbackUrl = TargetProject.Website
+                    End If
+                    If Item.DownloadAvailable Then Parsed.Add(Item)
+                Next
+                Parsed = Parsed.DistinctBy(Function(a) a.Id).ToList()
+            Else
+                Dim ResultJsonArray As JArray = Nothing
+                If Platform = ResourcePlatforms.CurseForge Then
+                    For RetryCount As Integer = 0 To 2
+                        Dim ResultJson As JObject = DlModRequest($"https://api.curseforge.com/v1/mods/{ProjectId}/files?pageSize=" &
+                        (10000 + RetryCount)) '每次重试多请求一个文件，以避免触发 CDN 缓存
+                        If ResultJson("pagination")("resultCount").ToObject(Of Integer) = ResultJson("pagination")("totalCount").ToObject(Of Integer) Then
+                            ResultJsonArray = ResultJson("data")
+                            Exit For
+                        ElseIf RetryCount < 2 Then
+                            Logger.Warn($"CurseForge 返回的资源版本列表存在缺失，即将进行第 {RetryCount + 1} 次重试") '#6224
+                            Logger.Info($"返回的原始内容如下：{vbCrLf}{ResultJson}")
+                        Else
+                            Logger.Info($"CurseForge 返回的资源版本列表存在缺失，返回的原始内容如下：{vbCrLf}{ResultJson}")
+                            Throw New Exception("CurseForge 返回的资源版本列表存在缺失")
+                        End If
+                    Next
+                Else 'Modrinth
+                    ResultJsonArray = DlModRequest($"https://api.modrinth.com/v2/project/{ProjectId}/version?include_changelog=false")
+                End If
+                Parsed = ResultJsonArray.Select(Function(a) FromPlatformJson(a, TargetProject.Types)).
+                    Where(Function(a) a.DownloadAvailable).
+                    DistinctBy(Function(a) a.Id).ToList 'CurseForge 可能会重复返回相同项（#1330）
             End If
-            Dim Parsed = ResultJsonArray.Select(Function(a) FromPlatformJson(a, TargetProject.Types)).
-                Where(Function(a) a.DownloadAvailable).
-                DistinctBy(Function(a) a.Id).ToList 'CurseForge 可能会重复返回相同项（#1330）
             Result = ProjectFilesCache.GetOrAdd(ProjectId, Parsed)
         End If
         If Not LoadDependencies Then Return Result
@@ -308,6 +473,8 @@ Public Class ResourceVersion
             .ReleaseType = Data("ReleaseType").ToObject(Of ReleaseTypes)
             If Data.ContainsKey("FileName") Then .FileName = Data("FileName").ToString
             If Data.ContainsKey("DownloadUrls") Then .DownloadUrls = Data("DownloadUrls").ToObject(Of List(Of String))
+            If Data.ContainsKey("ExternalOnlyUrl") Then .ExternalOnlyUrl = Data("ExternalOnlyUrl").ToString
+            If Data.ContainsKey("ExternalFallbackUrl") Then .ExternalFallbackUrl = Data("ExternalFallbackUrl").ToString
             If Data.ContainsKey("ModLoaders") Then .ModLoaders = Data("ModLoaders").ToObject(Of ModLoaders)
             If Data.ContainsKey("Size") Then .Size = Data("Size").ToObject(Of Integer)
             If Data.ContainsKey("Hash") Then .Hash = Data("Hash").ToString
@@ -334,6 +501,8 @@ Public Class ResourceVersion
             .Add("ReleaseType", CInt(ReleaseType))
             If FileName IsNot Nothing Then .Add("FileName", FileName)
             If DownloadUrls IsNot Nothing Then .Add("DownloadUrls", New JArray(DownloadUrls))
+            If ExternalOnlyUrl IsNot Nothing Then .Add("ExternalOnlyUrl", ExternalOnlyUrl)
+            If ExternalFallbackUrl IsNot Nothing Then .Add("ExternalFallbackUrl", ExternalFallbackUrl)
             If Hash IsNot Nothing Then .Add("Hash", Hash)
             If Size >= 0 Then .Add("Size", Size)
             .Add("RawDependencies", New JArray(RawDependencies))
@@ -366,6 +535,7 @@ Public Class ResourceVersion
                 .Info =
                 Iterator Function()
                     If ModLoaders <> ModLoaders.None Then Yield ModLoaders.Flags.Join("、"c)
+                    If Not String.IsNullOrEmpty(ExternalOnlyUrl) Then Yield "需在网页下载"
                     If .Title <> PathUtils.GetFileNameWithoutExtension(FileName) Then Yield PathUtils.GetFileNameWithoutExtension(FileName)
                     If Dependencies.Any Then Yield $"{Dependencies.Count} 项前置"
                     If GameVersions.All(Function(v) Not v.Contains(".") OrElse {"w", "snapshot", "rc", "pre", "experimental", "-"}.Any(Function(s) v.ContainsIgnoreCase(s))) Then Yield $"游戏版本 {GameVersions.Join("、"c)}"
@@ -391,10 +561,12 @@ Public Class ResourceVersion
     ''' <param name="LocalFileOrFolder">目标本地文件夹，或完整的文件路径。会自动判断类型。</param>
     Public Function ToNetFile(LocalFileOrFolder As String,
             Optional TrackDownloadReason As DownloadReason? = Nothing, Optional TrackGameVersion As String = Nothing, Optional TrackLoader As ModLoaders = ModLoaders.None) As NetFile
+        Dim Checker As New FileChecker With {.Hash = Hash, .ActualSize = Size}
+        If Size <= 0 AndAlso String.IsNullOrEmpty(Hash) Then Checker.MinSize = 512
         Return New NetFile(
             ParseModrinthTrackArguments(DownloadUrls, TrackDownloadReason, TrackGameVersion, TrackLoader),
             LocalFileOrFolder & If(LocalFileOrFolder.EndsWithF("\"), FileName, ""),
-            New FileChecker With {.Hash = Hash, .ActualSize = Size},
+            Checker,
             SimulateBrowserHeaders:=True)
     End Function
     ''' <summary>

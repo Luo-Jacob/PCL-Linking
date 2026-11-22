@@ -24,6 +24,14 @@ Public Module ModPrecheck
         Public Property ProvidedModIds As New List(Of String)
     End Class
 
+    Public Function GetPrecheckSettingEnabled(SettingKey As String, DefaultValue As Boolean) As Boolean
+        Try
+            Return Settings.Get(Of Boolean)(SettingKey)
+        Catch
+            Return DefaultValue
+        End Try
+    End Function
+
     Public Class ModPrecheckReport
         Public Property ScannedModCount As Integer = 0
         Public Property DuplicateMods As New List(Of String)
@@ -34,33 +42,63 @@ Public Module ModPrecheck
         Public Property McVersionMismatches As New List(Of String)
         Public Property AutoDisableCandidates As New List(Of String)
 
+        Public ReadOnly Property HasBlockingIssues As Boolean
+            Get
+                Return (DuplicateMods.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnDuplicate", True)) OrElse
+                       (LoaderMismatches.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnLoader", True)) OrElse
+                       (MissingDependencies.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnMissingDep", True)) OrElse
+                       (McVersionMismatches.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnMcVersion", True)) OrElse
+                       (ConflictBreaks.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnBreaks", False)) OrElse
+                       (ServerOnlyModsInClient.Any() AndAlso GetPrecheckSettingEnabled("PrecheckWarnServerOnly", False))
+            End Get
+        End Property
+
         Public ReadOnly Property HasIssues As Boolean
             Get
                 Return DuplicateMods.Any() OrElse
                        LoaderMismatches.Any() OrElse
-                       ServerOnlyModsInClient.Any() OrElse
                        MissingDependencies.Any() OrElse
-                       ConflictBreaks.Any() OrElse
-                       McVersionMismatches.Any()
+                       McVersionMismatches.Any() OrElse
+                       ServerOnlyModsInClient.Any() OrElse
+                       ConflictBreaks.Any()
             End Get
         End Property
 
-        Public Function FormatReport(Instance As McInstance) As String
+        Public Function FormatReport(Instance As McInstance, Optional BlockingOnly As Boolean = False) As String
             Dim Sb As New StringBuilder()
             Sb.AppendLine($"实例：{Instance.Name}（MC {Instance.Version.VanillaName} · {Instance.Version.ModLoaders}）")
             Sb.AppendLine($"已扫描启用 Mod：{ScannedModCount} 个")
             Sb.AppendLine()
-            If Not HasIssues Then
-                Sb.AppendLine("✅ 未发现重复 Mod ID、加载器错放、缺失前置、冲突声明或 MC 版本不匹配问题。")
+            Dim RelevantIssues As Boolean = If(BlockingOnly, HasBlockingIssues, HasIssues)
+            If Not RelevantIssues Then
+                Sb.AppendLine("✅ 未发现重复 Mod ID、加载器错放、缺失前置或 MC 版本不匹配等影响启动的问题。")
                 Return Sb.ToString().TrimEnd()
             End If
 
-            AppendSection(Sb, "【重复 Mod ID（多份并存会导致崩溃）】", DuplicateMods, 8)
-            AppendSection(Sb, "【加载器不匹配（错放导致无法加载）】", LoaderMismatches, 8)
-            AppendSection(Sb, "【纯服务端 Mod 错放进客户端】", ServerOnlyModsInClient, 6)
-            AppendSection(Sb, "【声明冲突 / 不兼容的 Mod】", ConflictBreaks, 8)
-            AppendSection(Sb, "【缺失前置依赖 Mod】", MissingDependencies, 10)
-            AppendSection(Sb, "【MC 游戏版本不兼容】", McVersionMismatches, 8)
+            Dim WarnDup = GetPrecheckSettingEnabled("PrecheckWarnDuplicate", True)
+            Dim WarnLoader = GetPrecheckSettingEnabled("PrecheckWarnLoader", True)
+            Dim WarnMissing = GetPrecheckSettingEnabled("PrecheckWarnMissingDep", True)
+            Dim WarnMcVer = GetPrecheckSettingEnabled("PrecheckWarnMcVersion", True)
+            Dim WarnBreaks = GetPrecheckSettingEnabled("PrecheckWarnBreaks", False)
+            Dim WarnServer = GetPrecheckSettingEnabled("PrecheckWarnServerOnly", False)
+
+            If WarnDup Then AppendSection(Sb, "【重复 Mod ID（多份并存会导致崩溃）】", DuplicateMods, 8)
+            If WarnLoader Then AppendSection(Sb, "【加载器不匹配（错放导致无法加载）】", LoaderMismatches, 8)
+            If WarnMissing Then AppendSection(Sb, "【缺失前置依赖 Mod】", MissingDependencies, 10)
+            If WarnMcVer Then AppendSection(Sb, "【MC 游戏版本不兼容】", McVersionMismatches, 8)
+            If WarnBreaks Then AppendSection(Sb, "【声明冲突 / 不兼容的 Mod】", ConflictBreaks, 8)
+            If WarnServer Then AppendSection(Sb, "【纯服务端 Mod 错放进客户端】", ServerOnlyModsInClient, 6)
+
+            If Not BlockingOnly Then
+                Dim Advisory As New List(Of String)
+                If Not WarnDup Then Advisory.AddRange(DuplicateMods)
+                If Not WarnLoader Then Advisory.AddRange(LoaderMismatches)
+                If Not WarnMissing Then Advisory.AddRange(MissingDependencies)
+                If Not WarnMcVer Then Advisory.AddRange(McVersionMismatches)
+                If Not WarnBreaks Then Advisory.AddRange(ConflictBreaks)
+                If Not WarnServer Then Advisory.AddRange(ServerOnlyModsInClient)
+                AppendSection(Sb, "【参考提示（已在设置中关闭启动拦截，一般不影响启动）】", Advisory, 10)
+            End If
 
             Return Sb.ToString().TrimEnd()
         End Function
@@ -243,14 +281,13 @@ Public Module ModPrecheck
                     End If
                 Next
             End If
-            For Each ConflictKey In {"breaks", "conflicts"}
-                Dim BreaksObj = TryCast(Obj(ConflictKey), JObject)
-                If BreaksObj IsNot Nothing Then
-                    For Each Prop In BreaksObj.Properties()
-                        Info.BreaksDeps(Prop.Name.Trim()) = FormatJsonVersionRange(Prop.Value)
-                    Next
-                End If
-            Next
+            'Fabric "conflicts" 仅作提示，不阻止游戏启动；仅记录硬冲突 "breaks"
+            Dim BreaksObj = TryCast(Obj("breaks"), JObject)
+            If BreaksObj IsNot Nothing Then
+                For Each Prop In BreaksObj.Properties()
+                    Info.BreaksDeps(Prop.Name.Trim()) = FormatJsonVersionRange(Prop.Value)
+                Next
+            End If
             Return Info
         Catch
             Return Nothing
@@ -302,9 +339,11 @@ Public Module ModPrecheck
     Private Function FormatJsonVersionRange(Tok As JToken) As String
         If Tok Is Nothing Then Return "*"
         If Tok.Type = JTokenType.Array Then
-            Return String.Join(" ", CType(Tok, JArray).Select(Function(x) x.ToString().Trim()))
+            Dim Parts = CType(Tok, JArray).Select(Function(x) x.ToString().Trim()).Where(Function(s) s <> "").ToList()
+            Return If(Parts.Any(), String.Join(" || ", Parts), "*")
         End If
-        Return Tok.ToString().Trim()
+        Dim Raw = Tok.ToString().Trim()
+        Return If(Raw = "", "*", Raw)
     End Function
 
     Private Function ParseModsToml(TomlText As String, Loader As ModLoaders, FilePath As String, FileName As String) As List(Of ModMetadataInfo)
@@ -330,7 +369,7 @@ Public Module ModPrecheck
                 DepModId = ""
                 Return
             End If
-            If DepType.Equals("incompatible", StringComparison.OrdinalIgnoreCase) Then
+            If DepType.Equals("incompatible", StringComparison.OrdinalIgnoreCase) AndAlso Not DepSide.Equals("SERVER", StringComparison.OrdinalIgnoreCase) Then
                 TargetMod.BreaksDeps(DepModId) = DepVersionRange
             ElseIf DepMandatory AndAlso DepType.Equals("required", StringComparison.OrdinalIgnoreCase) Then
                 If DepModId.Equals("minecraft", StringComparison.OrdinalIgnoreCase) Then
@@ -471,6 +510,18 @@ Public Module ModPrecheck
         Return List
     End Function
 
+    Private Function NormalizeModId(ModId As String) As String
+        If String.IsNullOrWhiteSpace(ModId) Then Return ""
+        Return ModId.Trim().Replace("-", "").Replace("_", "").ToLowerInvariant()
+    End Function
+
+    Private Function IsConcreteVersionString(Ver As String) As Boolean
+        If String.IsNullOrWhiteSpace(Ver) Then Return False
+        Dim V = Ver.Trim()
+        If V.Contains("${") OrElse V.Equals("0.0NONE", StringComparison.OrdinalIgnoreCase) OrElse V.Equals("unknown", StringComparison.OrdinalIgnoreCase) Then Return False
+        Return True
+    End Function
+
     ''' <summary>
     ''' 对指定游戏实例运行静态 Mod 冲突、重复、加载器与前置依赖预检。
     ''' </summary>
@@ -504,37 +555,32 @@ Public Module ModPrecheck
         Next
 
         Dim ProvidedIds As New HashSet(Of String)(BuiltinModIds, StringComparer.OrdinalIgnoreCase)
+        Dim NormalizedProvidedIds As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        For Each BId In BuiltinModIds
+            NormalizedProvidedIds.Add(NormalizeModId(BId))
+        Next
         Dim IdToFiles As New Dictionary(Of String, List(Of ModMetadataInfo))(StringComparer.OrdinalIgnoreCase)
+        Dim NormalizedIdToMetas As New Dictionary(Of String, List(Of ModMetadataInfo))(StringComparer.OrdinalIgnoreCase)
         For Each M In AllMetas
             If Not String.IsNullOrWhiteSpace(M.ModId) Then
                 ProvidedIds.Add(M.ModId)
+                Dim NormId = NormalizeModId(M.ModId)
+                NormalizedProvidedIds.Add(NormId)
                 If Not IdToFiles.ContainsKey(M.ModId) Then IdToFiles(M.ModId) = New List(Of ModMetadataInfo)
                 IdToFiles(M.ModId).Add(M)
+                If Not NormalizedIdToMetas.ContainsKey(NormId) Then NormalizedIdToMetas(NormId) = New List(Of ModMetadataInfo)
+                NormalizedIdToMetas(NormId).Add(M)
             End If
             For Each PId In M.ProvidedModIds
                 ProvidedIds.Add(PId)
+                NormalizedProvidedIds.Add(NormalizeModId(PId))
             Next
         Next
         Dim HasFabricApi = ProvidedIds.Contains("fabric-api") OrElse ProvidedIds.Contains("fabric_api") OrElse ProvidedIds.Contains("quilted_fabric_api")
         Dim HasSinytraConnector = ProvidedIds.Contains("connectormod") OrElse ProvidedIds.Contains("connector") OrElse ProvidedIds.Contains("sinytra_connector")
 
-        '1. 重复 Mod ID
-        For Each Kv In IdToFiles
-            Dim DistinctFiles = Kv.Value.Select(Function(x) x.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
-            If DistinctFiles.Count > 1 Then
-                Dim Names = DistinctFiles.Select(Function(p) Path.GetFileName(p)).ToList()
-                Report.DuplicateMods.Add($"ModId [{Kv.Key}] 存在 {DistinctFiles.Count} 份重复文件：{String.Join(" / ", Names)}")
-                '默认保留修改时间最新的那份，其余加入候选禁用列表
-                Dim Ordered = DistinctFiles.OrderByDescending(Function(p) File.GetLastWriteTimeUtc(p)).Skip(1)
-                For Each DupPath In Ordered
-                    If Not Report.AutoDisableCandidates.Contains(DupPath, StringComparer.OrdinalIgnoreCase) Then
-                        Report.AutoDisableCandidates.Add(DupPath)
-                    End If
-                Next
-            End If
-        Next
-
-        '2. 加载器匹配检查 & 3. 纯服务端 Mod 检查
+        '1. 加载器匹配检查 & 纯服务端 Mod 提示（先识别错放加载器的文件，避免重复或依赖连环误报）
+        Dim WrongLoaderPaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim InstLoaders = Instance.Version.ModLoaders
         For Each Kv In FileToMetas
             Dim JarPath = Kv.Key
@@ -542,11 +588,9 @@ Public Module ModPrecheck
             Dim Metas = Kv.Value
             If Not Metas.Any() Then Continue For
 
+            '纯服务端 Mod 在客户端会被 Mod 加载器自动跳过，只记作提示，不加入 AutoDisableCandidates，也不阻塞启动
             If Metas.All(Function(m) m.Environment.Equals("server", StringComparison.OrdinalIgnoreCase)) Then
-                Report.ServerOnlyModsInClient.Add($"{FileName}（声明仅限服务端运行）")
-                If Not Report.AutoDisableCandidates.Contains(JarPath, StringComparer.OrdinalIgnoreCase) Then
-                    Report.AutoDisableCandidates.Add(JarPath)
-                End If
+                Report.ServerOnlyModsInClient.Add($"{FileName}（声明仅限服务端运行，客户端通常会跳过）")
             End If
 
             If InstLoaders <> ModLoaders.None Then
@@ -557,26 +601,50 @@ Public Module ModPrecheck
                 If InstLoaders.HasFlagF(ModLoaders.Fabric) AndAlso Not InstLoaders.HasFlagF(ModLoaders.Forge) AndAlso Not InstLoaders.HasFlagF(ModLoaders.NeoForge) Then
                     If Not HasFabricMeta AndAlso (HasForgeMeta OrElse HasNeoMeta) Then
                         Report.LoaderMismatches.Add($"{FileName} 是 {If(HasNeoMeta, "NeoForge", "Forge")} Mod，无法在 Fabric 实例中加载")
-                        If Not Report.AutoDisableCandidates.Contains(JarPath, StringComparer.OrdinalIgnoreCase) Then Report.AutoDisableCandidates.Add(JarPath)
+                        WrongLoaderPaths.Add(JarPath)
+                        If GetPrecheckSettingEnabled("PrecheckWarnLoader", True) AndAlso Not Report.AutoDisableCandidates.Contains(JarPath, StringComparer.OrdinalIgnoreCase) Then Report.AutoDisableCandidates.Add(JarPath)
                     End If
                 ElseIf (InstLoaders.HasFlagF(ModLoaders.Forge) OrElse InstLoaders.HasFlagF(ModLoaders.NeoForge)) AndAlso Not InstLoaders.HasFlagF(ModLoaders.Fabric) Then
                     If HasFabricMeta AndAlso Not HasForgeMeta AndAlso Not HasNeoMeta AndAlso Not HasSinytraConnector Then
                         Report.LoaderMismatches.Add($"{FileName} 是纯 Fabric Mod，当前实例为 {InstLoaders}（且未安装 Sinytra Connector）")
-                        If Not Report.AutoDisableCandidates.Contains(JarPath, StringComparer.OrdinalIgnoreCase) Then Report.AutoDisableCandidates.Add(JarPath)
+                        WrongLoaderPaths.Add(JarPath)
+                        If GetPrecheckSettingEnabled("PrecheckWarnLoader", True) AndAlso Not Report.AutoDisableCandidates.Contains(JarPath, StringComparer.OrdinalIgnoreCase) Then Report.AutoDisableCandidates.Add(JarPath)
                     End If
                 End If
             End If
         Next
 
-        '4. 依赖缺失、5. 显式冲突、6. MC 版本不匹配
+        '2. 重复 Mod ID（剔除已经判定为错放加载器的文件）
+        For Each Kv In IdToFiles
+            Dim DistinctFiles = Kv.Value.Select(Function(x) x.FilePath).
+                Where(Function(p) Not WrongLoaderPaths.Contains(p)).
+                Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            If DistinctFiles.Count > 1 Then
+                Dim Names = DistinctFiles.Select(Function(p) Path.GetFileName(p)).ToList()
+                Report.DuplicateMods.Add($"ModId [{Kv.Key}] 存在 {DistinctFiles.Count} 份重复文件：{String.Join(" / ", Names)}")
+                '默认保留修改时间最新的那份，其余加入候选禁用列表
+                If GetPrecheckSettingEnabled("PrecheckWarnDuplicate", True) Then
+                    Dim Ordered = DistinctFiles.OrderByDescending(Function(p) File.GetLastWriteTimeUtc(p)).Skip(1)
+                    For Each DupPath In Ordered
+                        If Not Report.AutoDisableCandidates.Contains(DupPath, StringComparer.OrdinalIgnoreCase) Then
+                            Report.AutoDisableCandidates.Add(DupPath)
+                        End If
+                    Next
+                End If
+            End If
+        Next
+
+        '3. 依赖缺失、MC 版本不匹配、声明冲突 (BreaksDeps，精确比对版本区间，且作为非阻塞提示)
         Dim SeenMissing As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim SeenBreaks As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim SeenMcMismatch As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim InstanceMcVer = If(Instance.Version.VanillaName, "")
 
         For Each M In AllMetas
+            If WrongLoaderPaths.Contains(M.FilePath) Then Continue For
+
             If Not String.IsNullOrWhiteSpace(M.RequiredMcVersion) AndAlso Not String.IsNullOrWhiteSpace(InstanceMcVer) Then
-                If Not IsMcVersionConstraintSatisfied(M.RequiredMcVersion, InstanceMcVer) Then
+                If Not IsVersionConstraintSatisfied(M.RequiredMcVersion, InstanceMcVer, IsMinecraftVersion:=True) Then
                     Dim Key = $"{M.FileName}|{M.RequiredMcVersion}"
                     If SeenMcMismatch.Add(Key) Then
                         Report.McVersionMismatches.Add($"{M.DisplayName}（{M.FileName}）要求 MC {M.RequiredMcVersion}，当前为 {InstanceMcVer}")
@@ -586,24 +654,49 @@ Public Module ModPrecheck
 
             For Each DepKv In M.RequiredDeps
                 Dim DepId = DepKv.Key
-                If BuiltinModIds.Contains(DepId) Then Continue For
+                Dim DepNorm = NormalizeModId(DepId)
+                If BuiltinModIds.Contains(DepId) OrElse NormalizedProvidedIds.Contains(DepNorm) Then Continue For
                 If HasFabricApi AndAlso DepId.StartsWith("fabric-", StringComparison.OrdinalIgnoreCase) Then Continue For
-                If DepId.StartsWith("minecraft", StringComparison.OrdinalIgnoreCase) OrElse DepId.StartsWith("java", StringComparison.OrdinalIgnoreCase) Then Continue For
-                If Not ProvidedIds.Contains(DepId) AndAlso Not ProvidedIds.Contains(DepId.Replace("-", "_")) AndAlso Not ProvidedIds.Contains(DepId.Replace("_", "-")) Then
-                    Dim MissKey = $"{M.ModId}->{DepId}"
-                    If SeenMissing.Add(MissKey) Then
-                        Report.MissingDependencies.Add($"{M.DisplayName}（{M.FileName}）缺少前置 [{DepId}]" & If(DepKv.Value = "*" OrElse DepKv.Value = "", "", $" ({DepKv.Value})"))
-                    End If
+                If DepId.StartsWith("minecraft", StringComparison.OrdinalIgnoreCase) OrElse
+                   DepId.StartsWith("java", StringComparison.OrdinalIgnoreCase) OrElse
+                   DepId.StartsWith("quilt_", StringComparison.OrdinalIgnoreCase) Then Continue For
+                Dim MissKey = $"{M.ModId}->{DepNorm}"
+                If SeenMissing.Add(MissKey) Then
+                    Report.MissingDependencies.Add($"{M.DisplayName}（{M.FileName}）缺少前置 [{DepId}]" & If(DepKv.Value = "*" OrElse DepKv.Value = "", "", $" ({DepKv.Value})"))
                 End If
             Next
 
             For Each BrKv In M.BreaksDeps
                 Dim TargetId = BrKv.Key
-                If TargetId.Equals("minecraft", StringComparison.OrdinalIgnoreCase) Then Continue For
-                If ProvidedIds.Contains(TargetId) Then
-                    Dim BrKey = $"{M.ModId}X{TargetId}"
-                    If SeenBreaks.Add(BrKey) Then
-                        Report.ConflictBreaks.Add($"{M.DisplayName}（{M.FileName}）声明与已安装的 [{TargetId}] 冲突/不兼容")
+                Dim TargetNorm = NormalizeModId(TargetId)
+                If TargetId.Equals("minecraft", StringComparison.OrdinalIgnoreCase) OrElse
+                   TargetId.Equals("java", StringComparison.OrdinalIgnoreCase) OrElse
+                   TargetId.Equals("fabricloader", StringComparison.OrdinalIgnoreCase) OrElse
+                   TargetId.Equals("fabric-loader", StringComparison.OrdinalIgnoreCase) OrElse
+                   TargetNorm = NormalizeModId(M.ModId) Then Continue For
+
+                Dim MatchedMetas As List(Of ModMetadataInfo) = Nothing
+                If NormalizedIdToMetas.TryGetValue(TargetNorm, MatchedMetas) AndAlso MatchedMetas.Any() Then
+                    Dim BreakRange = If(BrKv.Value, "").Trim()
+                    Dim IsWildcardBreak = (BreakRange = "" OrElse BreakRange = "*" OrElse BreakRange.Equals("any", StringComparison.OrdinalIgnoreCase))
+                    Dim ViolatingMeta As ModMetadataInfo = Nothing
+                    If IsWildcardBreak Then
+                        ViolatingMeta = MatchedMetas.First()
+                    Else
+                        For Each Tm In MatchedMetas
+                            If Not IsConcreteVersionString(Tm.Version) Then Continue For
+                            If IsVersionConstraintSatisfied(BreakRange, Tm.Version, IsMinecraftVersion:=False) Then
+                                ViolatingMeta = Tm
+                                Exit For
+                            End If
+                        Next
+                    End If
+                    If ViolatingMeta IsNot Nothing Then
+                        Dim BrKey = $"{M.ModId}X{TargetNorm}"
+                        If SeenBreaks.Add(BrKey) Then
+                            Dim VerPart = If(Not IsWildcardBreak AndAlso IsConcreteVersionString(ViolatingMeta.Version), $"（当前 {ViolatingMeta.Version}，不兼容范围 {BreakRange}）", "")
+                            Report.ConflictBreaks.Add($"{M.DisplayName}（{M.FileName}）声明与 [{TargetId}] 不兼容{VerPart}")
+                        End If
                     End If
                 End If
             Next
@@ -612,83 +705,220 @@ Public Module ModPrecheck
         Return Report
     End Function
 
-    Private Function IsMcVersionConstraintSatisfied(Constraint As String, InstanceVer As String) As Boolean
-        If String.IsNullOrWhiteSpace(Constraint) OrElse String.IsNullOrWhiteSpace(InstanceVer) Then Return True
+    ''' <summary>
+    ''' 判断实际版本号（游戏版本或 Mod 版本）是否落在给定约束范围内。支持 OR (||)、Maven 多区间与 Fabric/SemVer 操作符。
+    ''' </summary>
+    Public Function IsVersionConstraintSatisfied(Constraint As String, ActualVer As String, Optional IsMinecraftVersion As Boolean = True) As Boolean
+        If String.IsNullOrWhiteSpace(Constraint) Then Return IsMinecraftVersion
         Dim Raw = Constraint.Trim()
-        If Raw = "*" OrElse Raw = "any" OrElse Raw.Contains("${") Then Return True
-        '只解析明确可判定的精确/区间格式，避免因复杂语义范围误报
-        '1. Maven 区间 [1.20.1,1.21) / (1.20,1.21] / [1.20.1]
-        If (Raw.StartsWith("[") OrElse Raw.StartsWith("(")) AndAlso (Raw.EndsWith("]") OrElse Raw.EndsWith(")")) Then
-            Dim Inner = Raw.Substring(1, Raw.Length - 2).Trim()
-            Dim InclLow = Raw.StartsWith("[")
-            Dim InclHigh = Raw.EndsWith("]")
-            If Not Inner.Contains(",") Then
-                Return IsExactOrPrefixMcMatch(Inner, InstanceVer)
+        If Raw = "*" OrElse Raw.Equals("any", StringComparison.OrdinalIgnoreCase) OrElse
+           Raw.Contains("${") OrElse Raw.Equals("0.0NONE", StringComparison.OrdinalIgnoreCase) Then
+            Return IsMinecraftVersion
+        End If
+        If Not IsConcreteVersionString(ActualVer) Then Return IsMinecraftVersion
+
+        Dim Branches = Raw.Split({"||"}, StringSplitOptions.RemoveEmptyEntries)
+        For Each Branch In Branches
+            Dim Trimmed = Branch.Trim()
+            If Trimmed = "" Then Continue For
+            If EvaluateSingleVersionBranch(Trimmed, ActualVer.Trim(), IsMinecraftVersion) Then Return True
+        Next
+        Return False
+    End Function
+
+    Private Function EvaluateSingleVersionBranch(Branch As String, ActualVer As String, IsMinecraftVersion As Boolean) As Boolean
+        '1. Maven 单区间或多区间：[1.20.1,1.21) / [1.20.1,1.20.2],[1.20.4,1.20.6]
+        If (Branch.StartsWith("[") OrElse Branch.StartsWith("(")) AndAlso (Branch.EndsWith("]") OrElse Branch.EndsWith(")")) Then
+            Dim Intervals = Regex.Matches(Branch, "[\[\(][^\]\)]*[\]\)]")
+            If Intervals.Count > 0 Then
+                For Each M As Match In Intervals
+                    If EvaluateMavenSingleInterval(M.Value, ActualVer, IsMinecraftVersion) Then Return True
+                Next
+                Return False
             End If
-            Dim Parts = Inner.Split(","c)
-            If Parts.Length = 2 Then
-                Dim Low = Parts(0).Trim()
-                Dim High = Parts(1).Trim()
-                If Low <> "" Then
-                    Dim CmpLow = McUtils.CompareVersion(InstanceVer, Low)
-                    If If(InclLow, CmpLow < 0, CmpLow <= 0) Then Return False
-                End If
-                If High <> "" Then
-                    Dim CmpHigh = McUtils.CompareVersion(InstanceVer, High)
-                    If If(InclHigh, CmpHigh > 0, CmpHigh >= 0) Then Return False
-                End If
-                Return True
-            End If
-            Return True
         End If
 
-        '2. Fabric ~1.20.1 / =1.20.1 / 1.20.x / 1.20.* 或精确版本号 1.20.1
-        Dim Tokens = Raw.Split({" "c}, StringSplitOptions.RemoveEmptyEntries)
+        '2. Fabric / SemVer 复合条件（空格分隔代表 AND）
+        Dim Normalized = Regex.Replace(Branch, "(>=|<=|>|<|=|~|\^)\s+", "$1")
+        Dim Tokens = Normalized.Split({" "c}, StringSplitOptions.RemoveEmptyEntries)
         For Each Tok In Tokens
-            If Tok = "*" Then Continue For
+            If Tok = "*" OrElse Tok.Equals("any", StringComparison.OrdinalIgnoreCase) Then Continue For
             If Tok.StartsWith(">=") Then
                 Dim Ver = Tok.Substring(2).Trim()
-                If Ver <> "" AndAlso McUtils.CompareVersion(InstanceVer, Ver) < 0 Then Return False
+                If Ver <> "" AndAlso CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) < 0 Then Return False
             ElseIf Tok.StartsWith(">") Then
                 Dim Ver = Tok.Substring(1).Trim()
-                If Ver <> "" AndAlso McUtils.CompareVersion(InstanceVer, Ver) <= 0 Then Return False
+                If Ver <> "" AndAlso CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) <= 0 Then Return False
             ElseIf Tok.StartsWith("<=") Then
                 Dim Ver = Tok.Substring(2).Trim()
-                If Ver <> "" AndAlso McUtils.CompareVersion(InstanceVer, Ver) > 0 Then Return False
+                If Ver <> "" AndAlso CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) > 0 Then Return False
             ElseIf Tok.StartsWith("<") Then
                 Dim Ver = Tok.Substring(1).Trim()
-                If Ver <> "" AndAlso McUtils.CompareVersion(InstanceVer, Ver) >= 0 Then Return False
+                If Ver <> "" AndAlso CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) >= 0 Then Return False
             ElseIf Tok.StartsWith("~") Then
                 Dim Ver = Tok.Substring(1).Trim()
-                If Not IsSameMinorSeries(Ver, InstanceVer) OrElse McUtils.CompareVersion(InstanceVer, Ver) < 0 Then Return False
+                If Ver <> "" AndAlso (Not IsSameMinorSeries(Ver, ActualVer) OrElse CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) < 0) Then Return False
             ElseIf Tok.StartsWith("^") Then
                 Dim Ver = Tok.Substring(1).Trim()
-                If Not IsSameMajorSeries(Ver, InstanceVer) OrElse McUtils.CompareVersion(InstanceVer, Ver) < 0 Then Return False
+                If Ver <> "" Then
+                    Dim MajorVer = GetLeadingMajorInt(Ver)
+                    Dim SeriesOk = If(MajorVer = 0 AndAlso Not IsMinecraftVersion, IsSameMinorSeries(Ver, ActualVer), IsSameMajorSeries(Ver, ActualVer))
+                    If Not SeriesOk OrElse CompareVersionForPrecheck(ActualVer, Ver, IsMinecraftVersion) < 0 Then Return False
+                End If
             ElseIf Tok.StartsWith("=") Then
                 Dim Ver = Tok.Substring(1).Trim()
-                If Not IsExactOrPrefixMcMatch(Ver, InstanceVer) Then Return False
-            ElseIf Regex.IsMatch(Tok, "^1\.\d+(\.\d+|\.[x*])?$", RegexOptions.IgnoreCase) Then
-                '无修饰符仅允许同系列，例如 1.20.x 或明确版本号 1.20.1
-                If Not IsExactOrPrefixMcMatch(Tok, InstanceVer) Then Return False
+                If Ver <> "" AndAlso Not IsExactOrPrefixMatch(Ver, ActualVer, IsMinecraftVersion) Then Return False
+            ElseIf IsMinecraftVersion AndAlso Regex.IsMatch(Tok, "^\d+\.\d+(\.\d+|\.[x*])?$", RegexOptions.IgnoreCase) Then
+                If Not IsExactOrPrefixMatch(Tok, ActualVer, True) Then Return False
+            ElseIf Not IsMinecraftVersion AndAlso Regex.IsMatch(Tok, "^\d+\.\d+") Then
+                If Not IsExactOrPrefixMatch(Tok, ActualVer, False) Then Return False
             End If
         Next
         Return True
     End Function
 
-    Private Function IsExactOrPrefixMcMatch(PatternVer As String, InstanceVer As String) As Boolean
+    Private Function EvaluateMavenSingleInterval(IntervalStr As String, ActualVer As String, IsMinecraftVersion As Boolean) As Boolean
+        Dim Inner = IntervalStr.Substring(1, IntervalStr.Length - 2).Trim()
+        Dim InclLow = IntervalStr.StartsWith("[")
+        Dim InclHigh = IntervalStr.EndsWith("]")
+        If Not Inner.Contains(",") Then
+            If Inner = "" Then Return True
+            Return IsExactOrPrefixMatch(Inner, ActualVer, IsMinecraftVersion)
+        End If
+        Dim Parts = Inner.Split(","c)
+        If Parts.Length <> 2 Then Return True
+        Dim Low = Parts(0).Trim()
+        Dim High = Parts(1).Trim()
+        If Low <> "" Then
+            Dim CmpLow = CompareVersionForPrecheck(ActualVer, Low, IsMinecraftVersion)
+            If If(InclLow, CmpLow < 0, CmpLow <= 0) Then Return False
+        End If
+        If High <> "" Then
+            Dim CmpHigh = CompareVersionForPrecheck(ActualVer, High, IsMinecraftVersion)
+            If If(InclHigh, CmpHigh > 0, CmpHigh >= 0) Then Return False
+        End If
+        Return True
+    End Function
+
+    Private Function CompareVersionForPrecheck(LeftVer As String, RightVer As String, IsMinecraftVersion As Boolean) As Integer
+        Dim A = StripBuildMetadata(LeftVer).Trim()
+        Dim B = StripBuildMetadata(RightVer).Trim()
+        If A.Equals(B, StringComparison.OrdinalIgnoreCase) Then Return 0
+        Dim LeftDotted = Regex.IsMatch(A, "^\d+(?:\.\d+)*")
+        Dim RightDotted = Regex.IsMatch(B, "^\d+(?:\.\d+)*")
+        If Not (LeftDotted AndAlso RightDotted) Then
+            If IsMinecraftVersion Then Return McUtils.CompareVersion(A, B)
+            Return String.Compare(A, B, StringComparison.OrdinalIgnoreCase)
+        End If
+        Return CompareSemVer(A, B)
+    End Function
+
+    Private Function CompareSemVer(LeftVer As String, RightVer As String) As Integer
+        Dim ACore As String = LeftVer
+        Dim APre As String = Nothing
+        Dim AHasHyphen As Boolean = False
+        SplitPreRelease(LeftVer, ACore, APre, AHasHyphen)
+
+        Dim BCore As String = RightVer
+        Dim BPre As String = Nothing
+        Dim BHasHyphen As Boolean = False
+        SplitPreRelease(RightVer, BCore, BPre, BHasHyphen)
+
+        Dim ANums = ParseNumericParts(ACore)
+        Dim BNums = ParseNumericParts(BCore)
+        Dim MaxLen = Math.Max(ANums.Count, BNums.Count)
+        For i As Integer = 0 To MaxLen - 1
+            Dim ValA = If(i < ANums.Count, ANums(i), 0)
+            Dim ValB = If(i < BNums.Count, BNums(i), 0)
+            If ValA <> ValB Then Return ValA.CompareTo(ValB)
+        Next
+
+        If Not AHasHyphen AndAlso Not BHasHyphen Then Return 0
+        If Not AHasHyphen Then Return 1
+        If Not BHasHyphen Then Return -1
+        If String.Equals(APre, BPre, StringComparison.OrdinalIgnoreCase) Then Return 0
+        If APre = "" Then Return -1
+        If BPre = "" Then Return 1
+        Return CompareAlphaNumTokens(APre, BPre)
+    End Function
+
+    Private Function CompareAlphaNumTokens(LeftPre As String, RightPre As String) As Integer
+        Dim LeftToks = Regex.Matches(LeftPre, "\d+|[a-z]+", RegexOptions.IgnoreCase)
+        Dim RightToks = Regex.Matches(RightPre, "\d+|[a-z]+", RegexOptions.IgnoreCase)
+        Dim MaxLen = Math.Max(LeftToks.Count, RightToks.Count)
+        For i As Integer = 0 To MaxLen - 1
+            If i >= LeftToks.Count Then Return -1
+            If i >= RightToks.Count Then Return 1
+            Dim Sa = LeftToks(i).Value
+            Dim Sb = RightToks(i).Value
+            Dim Na As Integer, Nb As Integer
+            Dim IsNumA = Integer.TryParse(Sa, Na)
+            Dim IsNumB = Integer.TryParse(Sb, Nb)
+            If IsNumA AndAlso IsNumB Then
+                If Na <> Nb Then Return Na.CompareTo(Nb)
+            ElseIf IsNumA <> IsNumB Then
+                Return If(IsNumA, -1, 1)
+            Else
+                Dim Cmp = String.Compare(Sa, Sb, StringComparison.OrdinalIgnoreCase)
+                If Cmp <> 0 Then Return Cmp
+            End If
+        Next
+        Return String.Compare(LeftPre, RightPre, StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    Private Sub SplitPreRelease(Ver As String, ByRef Core As String, ByRef Pre As String, ByRef HasHyphen As Boolean)
+        Dim NoBuild = StripBuildMetadata(Ver)
+        Dim HyphenIdx = NoBuild.IndexOf("-"c)
+        If HyphenIdx >= 0 Then
+            HasHyphen = True
+            Core = NoBuild.Substring(0, HyphenIdx)
+            Pre = NoBuild.Substring(HyphenIdx + 1)
+        Else
+            HasHyphen = False
+            Core = NoBuild
+            Pre = ""
+        End If
+    End Sub
+
+    Private Function StripBuildMetadata(Ver As String) As String
+        If String.IsNullOrEmpty(Ver) Then Return ""
+        Dim PlusIdx = Ver.IndexOf("+"c)
+        Return If(PlusIdx >= 0, Ver.Substring(0, PlusIdx), Ver)
+    End Function
+
+    Private Function ParseNumericParts(Core As String) As List(Of Integer)
+        Dim List As New List(Of Integer)
+        For Each Seg In Core.Split("."c)
+            Dim M = Regex.Match(Seg, "^\d+")
+            If M.Success Then
+                Dim V As Integer
+                List.Add(If(Integer.TryParse(M.Value, V), V, 0))
+            End If
+        Next
+        Return List
+    End Function
+
+    Private Function GetLeadingMajorInt(Ver As String) As Integer
+        Dim Nums = ParseNumericParts(StripBuildMetadata(Ver).Split("-"c)(0))
+        Return If(Nums.Count > 0, Nums(0), -1)
+    End Function
+
+    Private Function IsExactOrPrefixMatch(PatternVer As String, ActualVer As String, IsMinecraftVersion As Boolean) As Boolean
         If String.IsNullOrWhiteSpace(PatternVer) Then Return True
-        Dim Clean = PatternVer.Trim().ToLowerInvariant()
+        Dim Clean = StripBuildMetadata(PatternVer).Trim().ToLowerInvariant()
+        Dim ActualClean = StripBuildMetadata(ActualVer).Trim().ToLowerInvariant()
         If Clean.EndsWith(".x") OrElse Clean.EndsWith(".*") Then
             Dim Prefix = Clean.Substring(0, Clean.Length - 2)
-            Return InstanceVer.Equals(Prefix, StringComparison.OrdinalIgnoreCase) OrElse
-                   InstanceVer.StartsWith(Prefix & ".", StringComparison.OrdinalIgnoreCase)
+            Return ActualClean.Equals(Prefix, StringComparison.OrdinalIgnoreCase) OrElse
+                   ActualClean.StartsWith(Prefix & ".", StringComparison.OrdinalIgnoreCase)
         End If
-        Return IsSameMinorSeries(Clean, InstanceVer)
+        If IsMinecraftVersion Then Return IsSameMinorSeries(Clean, ActualClean)
+        Return CompareSemVer(ActualClean, Clean) = 0
     End Function
 
     Private Function IsSameMinorSeries(VerA As String, VerB As String) As Boolean
-        Dim PartsA = VerA.Split("."c)
-        Dim PartsB = VerB.Split("."c)
+        Dim PartsA = StripBuildMetadata(VerA).Split("-"c)(0).Split("."c)
+        Dim PartsB = StripBuildMetadata(VerB).Split("-"c)(0).Split("."c)
         If PartsA.Length >= 2 AndAlso PartsB.Length >= 2 Then
             Return PartsA(0) = PartsB(0) AndAlso PartsA(1) = PartsB(1)
         End If
@@ -696,8 +926,8 @@ Public Module ModPrecheck
     End Function
 
     Private Function IsSameMajorSeries(VerA As String, VerB As String) As Boolean
-        Dim PartsA = VerA.Split("."c)
-        Dim PartsB = VerB.Split("."c)
+        Dim PartsA = StripBuildMetadata(VerA).Split("-"c)(0).Split("."c)
+        Dim PartsB = StripBuildMetadata(VerB).Split("-"c)(0).Split("."c)
         If PartsA.Length >= 1 AndAlso PartsB.Length >= 1 Then Return PartsA(0) = PartsB(0)
         Return True
     End Function

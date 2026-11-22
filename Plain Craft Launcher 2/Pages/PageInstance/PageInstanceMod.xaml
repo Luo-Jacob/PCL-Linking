@@ -29,7 +29,9 @@
                                 <local:MyButton x:Name="BtnManageCompatPrecheck" Height="28" Text="跨版本兼容预检" Padding="12,0" Margin="0,0,10,4" />
                                 <local:MyButton x:Name="BtnManageExtractPreset" Height="28" Text="提取为常用清单" Padding="12,0" Margin="0,0,14,4" />
                                 <local:MyCheckBox x:Name="ChkAutoUpdateMods" Height="28" Text="启动前自动更新 Mod" VerticalAlignment="Center" Margin="0,0,12,4" />
-                                <local:MyCheckBox x:Name="ChkPrelaunchModCheck" Height="28" Text="启动前自动体检冲突" VerticalAlignment="Center" Margin="0,0,0,4" />
+                                <local:MyCheckBox x:Name="ChkPrelaunchModCheck" Height="28" Text="启动前自动体检冲突" VerticalAlignment="Center" Margin="0,0,8,4" />
+                                <local:MyButton x:Name="BtnManagePrecheckSettings" Height="26" Text="报错选项" Padding="10,0" Margin="0,0,0,4"
+                                                ToolTip="前往「设置 → 全局设置」自定义启动前拦截哪些 Mod 报错类型" />
                             </WrapPanel>
                         </StackPanel>
                     </local:MyCard>

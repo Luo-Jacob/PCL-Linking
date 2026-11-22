@@ -218,6 +218,93 @@
                 </StackPanel>
             </local:MyCard>
 
+            <local:MyCard x:Name="CardServerPlugins" Title="服务端插件管理与一键更新" Margin="0,0,0,15" CanSwap="True" IsSwapped="True">
+                <StackPanel Margin="25,40,25,18">
+                    <WrapPanel Margin="0,0,0,10">
+                        <local:MyButton x:Name="BtnRefreshServerPlugins" Text="刷新列表" Height="28" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnCheckPluginDeps" Text="依赖体检" Height="28" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnCheckPluginUpdates" Text="检查插件更新" Height="28" Padding="12,0" ColorType="Highlight" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnInstallMorePlugins" Text="下载新插件" Height="28" Padding="12,0" Margin="0,0,0,6" />
+                    </WrapPanel>
+                    <TextBlock x:Name="LabServerPluginsSummary" Text="当前目录尚未扫描插件" FontSize="12.5" Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,8" />
+                    <local:MyHint x:Name="HintServerPluginDeps" Visibility="Collapsed" Theme="Yellow" Margin="0,0,0,10" />
+                    <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="PanServerPluginList" />
+                    </ScrollViewer>
+                </StackPanel>
+            </local:MyCard>
+
+            <local:MyCard x:Name="CardServerPerfConfig" Title="高级配置与性能预设（支持 Paper / Aikar / ZGC）" Margin="0,0,0,15" CanSwap="True" IsSwapped="True">
+                <StackPanel Margin="25,40,25,18">
+                    <WrapPanel Margin="0,0,0,12">
+                        <local:MyButton x:Name="BtnPresetSmoothCoop" Text="套用「联机流畅」预设" Height="28" Padding="12,0" Margin="0,0,8,6"
+                                        ToolTip="视距 10、模拟距离 6、开启 Aikar's Flags、优化爆炸与自动保存区块速率，适合朋友联机。" />
+                        <local:MyButton x:Name="BtnPresetLowSpec" Text="套用「低配轻量」预设" Height="28" Padding="12,0" Margin="0,0,8,6"
+                                        ToolTip="降低视距与刷怪上限、提升网络压缩阈值，适合低配电脑开服。" />
+                        <local:MyButton x:Name="BtnPresetVanilla" Text="恢复「原版默认」" Height="28" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnReloadPerfConfig" Text="重新读取" Height="28" Padding="12,0" Margin="0,0,8,6" />
+                        <local:MyButton x:Name="BtnSavePerfConfig" Text="保存高级配置" Height="28" Padding="14,0" ColorType="Highlight" Margin="0,0,0,6" />
+                    </WrapPanel>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="28" />
+                            <RowDefinition Height="10" />
+                            <RowDefinition Height="28" />
+                            <RowDefinition Height="10" />
+                            <RowDefinition Height="28" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="模拟距离" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="simulation-distance：实体、红石与农作物实际刻更新范围（默认 10，联机建议 5~7）。" />
+                        <local:MyTextBox Grid.Row="0" Grid.Column="1" x:Name="TextPerfSimDist" Text="10" />
+                        <TextBlock Grid.Row="0" Grid.Column="3" Text="出生点保护" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="spawn-protection：非 OP 玩家无法破坏出生点半径内方块（设为 0 可取消限制）。" />
+                        <local:MyTextBox Grid.Row="0" Grid.Column="4" x:Name="TextPerfSpawnProt" Text="16" />
+                        <TextBlock Grid.Row="0" Grid.Column="6" Text="网络压缩阈值" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="network-compression-threshold：超过此字节数的数据包才压缩（默认 256，局域网可设 512）。" />
+                        <local:MyTextBox Grid.Row="0" Grid.Column="7" x:Name="TextPerfNetCompress" Text="256" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="单 Tick 超时" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="max-tick-time：卡死多少毫秒后触发看门狗强制停服（毫秒，设为 -1 禁用，Mod 服建议加大）。" />
+                        <local:MyTextBox Grid.Row="2" Grid.Column="1" x:Name="TextPerfMaxTick" Text="60000" />
+                        <TextBlock Grid.Row="2" Grid.Column="3" Text="怪物上限" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="bukkit.yml → spawn-limits.monsters（Paper/Purpur 有效）。" />
+                        <local:MyTextBox Grid.Row="2" Grid.Column="4" x:Name="TextPerfMonsters" Text="70" />
+                        <TextBlock Grid.Row="2" Grid.Column="6" Text="动物上限" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="bukkit.yml → spawn-limits.animals（Paper/Purpur 有效）。" />
+                        <local:MyTextBox Grid.Row="2" Grid.Column="7" x:Name="TextPerfAnimals" Text="10" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Paper 存区块/Tick" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   ToolTip="paper-world-defaults.yml → chunks.max-auto-save-chunks-per-tick（建议 6~10 降低自动存盘卡顿）。" />
+                        <local:MyTextBox Grid.Row="4" Grid.Column="1" x:Name="TextPerfAutoSaveChunks" Text="24" />
+                        <TextBlock Grid.Row="4" Grid.Column="3" Text="JVM GC 预设" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <local:MyComboBox Grid.Row="4" Grid.Column="4" Grid.ColumnSpan="4" x:Name="ComboServerJvmPreset">
+                            <local:MyComboBoxItem Content="标准默认（无额外 GC 参数）" Tag="Standard" IsSelected="True" />
+                            <local:MyComboBoxItem Content="Aikar's Flags（Paper / Purpur / Mod 服通用高吞吐推荐）" Tag="Aikar" />
+                            <local:MyComboBoxItem Content="Java 21+ 分代 ZGC（极低 STW 卡顿，自动适配 Java 23/25）" Tag="GenerationalZGC" />
+                        </local:MyComboBox>
+                    </Grid>
+
+                    <WrapPanel Margin="0,2,0,0">
+                        <local:MyCheckBox x:Name="ChkPerfAllowFlight" Checked="False" Text="允许飞行 (allow-flight)" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkPerfCommandBlock" Checked="False" Text="启用命令方块" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkPerfSyncChunk" Checked="True" Text="同步区块写入 (关闭可降卡顿)" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkPerfOptimizeExp" Checked="False" Text="Paper 优化爆炸计算" Margin="0,0,18,6" />
+                        <local:MyCheckBox x:Name="ChkPerfPreventUnloaded" Checked="True" Text="阻止实体移入未加载区块" Margin="0,0,0,6" />
+                    </WrapPanel>
+                </StackPanel>
+            </local:MyCard>
+
             <local:MyCard Title="服务端运维与存档互通" Margin="0,0,0,15" CanSwap="True">
                 <StackPanel Margin="25,40,25,18">
                     <WrapPanel Margin="0,0,0,10">
@@ -254,7 +341,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.0 · 基于 PCL 2.14.0.0 开源版二次开发" />
 
         </StackPanel>
     </local:MyScrollViewer>

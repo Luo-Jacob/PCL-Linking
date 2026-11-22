@@ -1,6 +1,6 @@
 # 隐私政策与本地数据处理说明（PCL Linking 修改版）
 
-最后更新日期：2026-11-22（对应版本 `v 1.0.2`）
+最后更新日期：2026-11-22（对应版本 `v 1.1.0`）
 
 **PCL Linking**（**Plain Craft Launcher - PCL Linking 修改版**，开源仓库：<https://github.com/Luo-Jacob/PCL-Linking>）为本地优先（Local-First）的桌面应用程序，**不包含任何内置遥测（Telemetry）、统计上报或广告 SDK**。仅在您主动使用对应联网功能时，才会与相关第三方或开源公共服务通信。
 
@@ -11,7 +11,7 @@
 所有配置、缓存与聊天记录均保存在程序同级 `PCL Linking\` 便携目录中（或游戏实例目录下的 `PCL Linking\` 子目录），不会向 Windows 系统无关目录上传您的配置：
 
 - **常规配置与游玩统计**：`PCL Linking\Setup.ini`、`PCL Linking\Global.ini`、`PCL Linking\Hotkeys.json`、`PCL Linking\Playtime.json`、`PCL Linking\SceneProfiles.json` 等文件以本地文本 / JSON 形式保存。
-- **敏感设置保护（Windows DPAPI）**：`ToolCurseForgeApiKey`、`LoginAuthPass`、`CacheAuthAccess`、联机房间粘性密钥等敏感项优先通过 Windows 数据保护 API（`ProtectedData.Protect`，`DataProtectionScope.CurrentUser`）绑定当前 Windows 用户加密存储（前缀 `dpapi:`）。
+- **敏感设置保护（Windows DPAPI）**：`ToolCurseForgeApiKey`、`ToolMsOAuthClientId`、`CacheMsV2*`（微软令牌与档案缓存）、`LoginMsJson`、`LoginAuthPass`、`CacheAuthAccess`、联机房间粘性密钥等敏感项优先通过 Windows 数据保护 API（`ProtectedData.Protect`，`DataProtectionScope.CurrentUser`）绑定当前 Windows 用户加密存储（前缀 `dpapi:`）。
   - > 注意：由于配置默认存于程序同级 `PCL Linking\` 目录，若您将整个 `PCL Linking\` 目录分享给他人，仍请先清理个人设置、日志与聊天记录文件。
 - **诊断日志**：运行日志（`PCL Linking\Log1.txt` ~ `Log5.txt`）仅保存在本地用于排查问题，程序不会自动上传。提交 GitHub Issue 前请自行检查并遮盖个人用户名或敏感地址。
 
@@ -36,14 +36,16 @@
 
 - **联机组件按需下载**：若程序同级未放置 `EasyTier.zip`，仅当您首次点击开启/加入联机房间时，程序才会从 **EasyTier 官方 GitHub Releases**（`https://github.com/EasyTier/EasyTier/releases`）下载压缩包并强制校验 SHA-256 哈希。
 - **公共节点池查询**：启用「社区节点池」后，联机时会请求 `https://uptime.easytier.cn/api/nodes` 获取活跃公开中继节点列表，并向选中节点建立组网连接。
+- **虚网加密侧通道（Mod 核对与点对点大文件/存档直传）**：加入联机房间后，启动器默认经由 EasyTier 虚拟局域网的 `TCP 41729` 端口与房主建立基于房间密钥的 **HMAC-SHA256 双向鉴权 + AES-256-CBC** 加密通道，仅用于核对双方 Mod 清单摘要以及传输您主动分享或确认接收的存档与大文件（接收前必弹窗确认并强制校对 SHA-256，打包存档时自动跳过 `session.lock` 锁文件）。
 - **可被联机对端与中继看到的网络信息**：您的公网/中继观测 IP 地址、组网虚拟 IP（例如 `10.114.114.x`）、玩家在联机面板展示的游戏昵称以及房间开放端口。
 
 ---
 
 ## 4. Minecraft 启动与资源下载服务
 
-- **离线登录与第三方外置登录（Authlib-Injector）**：仅与您配置的认证服务器或本地启动流程交互。本修改版已移除官方微软 OAuth 客户端实现；官方微软正版账号日常使用建议直接使用官方 [PCL](https://github.com/Meloong-Git/PCL)。
-- **资源 / 服务端镜像源与探测器**：根据您触发的功能，可能请求 Mojang / BMCLAPI、Modrinth API、CurseForge API（仅向 CurseForge 官方域名发送您自行填写的 `x-api-key`）、Paper / Purpur / Fabric / NeoForge 官方接口，或在您触发服务器状态探测时向目标主机发起 TCP / SLP 握手。
+- **微软正版登录与官方 PCL 协同**：若您在「设置 → 启动」或通过 `PCL_MS_CLIENT_ID` 环境变量配置了经 Mojang 审核的微软 OAuth Client ID 并触发登录，程序将通过标准设备码流程向微软官方认证端点（`login.microsoftonline.com`、`login.live.com`、`user.auth.xboxlive.com`、`xsts.auth.xboxlive.com`、`api.minecraftservices.com`）请求与刷新会话令牌，并经 DPAPI 加密存放在本地配置中；所有日志输出均不记录设备码及会话令牌明文。若未配置或无法直接验证，也可选择仅调用您本地指定的官方 [PCL](https://github.com/Meloong-Git/PCL) 可执行文件完成验证与启动（本程序不会读取或解密官方 PCL 私有注册表中的凭据）。
+- **离线登录与第三方外置登录（Authlib-Injector）**：仅与您配置的认证服务器或本地启动流程交互。
+- **资源 / 服务端镜像源与探测器**：根据您触发的功能，可能请求 Mojang / BMCLAPI、Modrinth API、CurseForge API（仅向 CurseForge 官方域名发送您自行填写的 `x-api-key`）、Hangar API（`hangar.papermc.io`）、Spiget API（`api.spiget.org`，仅用于 SpigotMC 插件公开信息与下载直链；部分外链或限流插件会引导您自行打开 `spigotmc.org` 页面）、Paper / Purpur / Fabric / NeoForge 官方接口，或在您触发服务器状态探测时向目标主机发起 TCP / SLP 握手。
 
 ---
 

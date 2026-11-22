@@ -638,16 +638,28 @@ Public Class PageToolsSkin3D
         RunInNewThread(
         Sub()
             Try
-                '1. 按当前生效登录方式优先检测外置皮肤认证缓存
-                Dim LoginMode As Integer = Settings.Get(Of Integer)("LoginType")
+                '1. 按当前生效登录方式优先检测正版 / 外置皮肤认证缓存
+                Dim EffectiveLogin As McLoginType = Settings.Get(Of McLoginType)("LoginType")
                 If McInstanceSelected IsNot Nothing Then
                     Dim InstLogin As Integer = Settings.Get(Of Integer)("VersionServerLogin", McInstanceSelected)
-                    If InstLogin > 0 Then LoginMode = InstLogin
+                    Select Case InstLogin
+                        Case 1 : EffectiveLogin = McLoginType.Ms
+                        Case 2 : EffectiveLogin = McLoginType.Legacy
+                        Case 3 : EffectiveLogin = McLoginType.Auth
+                    End Select
                 End If
+
+                Dim MsUuid = Settings.Get(Of String)("CacheMsV2Uuid")
+                If EffectiveLogin = McLoginType.Ms AndAlso Not String.IsNullOrWhiteSpace(MsUuid) Then
+                    Dim ProfileUrl = $"https://sessionserver.mojang.com/session/minecraft/profile/{MsUuid.Replace("-", "")}"
+                    Dim SkinResult = FetchProfileSkin(ProfileUrl)
+                    ApplyFetchedSkinOnUi(SkinResult, $"当前正版账号 ({Settings.Get(Of String)("CacheMsV2Name")})", "已加载当前正版账号皮肤与披风！", "已加载当前正版账号皮肤！", "读取当前账号皮肤失败")
+                    Return
+                End If
+
                 Dim AuthUuid = Settings.Get(Of String)("CacheAuthUuid")
                 Dim AuthServer = Settings.Get(Of String)("CacheAuthServerServer")
-
-                If LoginMode = 2 AndAlso Not String.IsNullOrWhiteSpace(AuthUuid) AndAlso Not String.IsNullOrWhiteSpace(AuthServer) Then
+                If EffectiveLogin = McLoginType.Auth AndAlso Not String.IsNullOrWhiteSpace(AuthUuid) AndAlso Not String.IsNullOrWhiteSpace(AuthServer) Then
                     Dim ProfileUrl = $"{AuthServer.TrimEnd("/"c)}/sessionserver/session/minecraft/profile/{AuthUuid.Replace("-", "")}"
                     Dim SkinResult = FetchProfileSkin(ProfileUrl)
                     ApplyFetchedSkinOnUi(SkinResult, $"当前外置账号 ({Settings.Get(Of String)("CacheAuthName")})", "已加载当前外置账号皮肤与披风！", "已加载当前外置账号皮肤！", "读取当前账号皮肤失败")

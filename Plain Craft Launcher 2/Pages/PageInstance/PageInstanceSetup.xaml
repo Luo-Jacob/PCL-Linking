@@ -205,8 +205,12 @@
                         </local:MyTextBox>
                         <TextBlock VerticalAlignment="Center" Grid.Row="2" HorizontalAlignment="Left" Text="登录方式" Margin="0,0,25,0" />
                         <local:MyComboBox x:Name="ComboServerLogin" Grid.Row="2" Grid.Column="1" local:SettingService.Key="VersionServerLogin">
-                            <local:MyComboBoxItem Content="离线登录（默认）" local:SettingService.Value="0"
-                                                  ToolTip="使用启动器左侧的离线登录。" />
+                            <local:MyComboBoxItem Content="默认（允许切换正版与离线登录）" local:SettingService.Value="0"
+                                                  ToolTip="使用启动页顶部的正版 / 离线登录切换栏。" />
+                            <local:MyComboBoxItem Content="仅正版登录" local:SettingService.Value="1"
+                                                  ToolTip="为当前版本固定使用微软正版登录。" />
+                            <local:MyComboBoxItem Content="仅离线登录" local:SettingService.Value="2"
+                                                  ToolTip="为当前版本固定使用离线登录。" />
                             <local:MyComboBoxItem Content="第三方外置登录（Authlib-Injector / LittleSkin）" local:SettingService.Value="3"
                                                   ToolTip="为当前版本启用 Authlib-Injector / Yggdrasil 外置登录（支持 LittleSkin 等皮肤站）。" />
                         </local:MyComboBox>

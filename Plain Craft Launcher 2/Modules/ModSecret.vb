@@ -6,8 +6,279 @@ Friend Module ModSecret
     Public Const VersionBranchMain As String = "OpenSource"
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
     Public Const RegFolder As String = "PCL Linking"
+    '微软 OAuth Client ID（环境变量兜底，可在设置中配置自定义 Client ID）
+    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")
     'CurseForge API Key（环境变量兜底，可在设置中配置自定义 Key）
     Public CurseForgeAPIKey As String = If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")
+
+#Region "微软正版 OAuth 与官方 PCL 协同"
+
+    ''' <summary>
+    ''' 获取当前生效的微软 OAuth Client ID：优先读取用户在设置中填写的 Client ID，其次读取环境变量 PCL_MS_CLIENT_ID。
+    ''' </summary>
+    Friend Function GetEffectiveMsOAuthClientId() As String
+        Try
+            Dim CustomId As String = Settings.Get(Of String)("ToolMsOAuthClientId")
+            If Not String.IsNullOrWhiteSpace(CustomId) Then Return CustomId.Trim()
+        Catch
+        End Try
+        Return If(OAuthClientId, "").Trim()
+    End Function
+
+    ''' <summary>
+    ''' 当前是否已配置可用的微软 OAuth Client ID。
+    ''' </summary>
+    Friend Function HasEffectiveMsOAuthClientId() As Boolean
+        Return Not String.IsNullOrEmpty(GetEffectiveMsOAuthClientId())
+    End Function
+
+    ''' <summary>
+    ''' 判断异常是否属于微软/Mojang 拒绝未授权或无效的 OAuth Client ID。
+    ''' </summary>
+    Friend Function IsMsAuthClientRejectedException(ex As Exception) As Boolean
+        Dim Cur As Exception = ex
+        While Cur IsNot Nothing
+            Dim Msg As String = If(Cur.Message, "")
+            If Msg.Contains("invalid_client") OrElse Msg.Contains("unauthorized_client") OrElse
+               Msg.Contains("Invalid app registration") OrElse Msg.Contains("AADSTS700016") OrElse
+               Msg.Contains("未获微软/Mojang Minecraft API 授权") OrElse Msg.Contains("Client ID 无效") Then
+                Return True
+            End If
+            If TypeOf Cur Is HttpRequestCodeException Then
+                Dim HttpEx = CType(Cur, HttpRequestCodeException)
+                Dim Resp As String = If(HttpEx.Response, "")
+                If Resp.Contains("invalid_client") OrElse Resp.Contains("unauthorized_client") OrElse
+                   Resp.Contains("Invalid app registration") OrElse Resp.Contains("AADSTS700016") Then
+                    Return True
+                End If
+            End If
+            Cur = Cur.InnerException
+        End While
+        Return False
+    End Function
+
+    Private Function NormalizeExeFullPath(FilePath As String) As String
+        Try
+            If String.IsNullOrWhiteSpace(FilePath) Then Return ""
+            Return IO.Path.GetFullPath(FilePath.Trim().Trim(""""c))
+        Catch
+            Return If(FilePath, "").Trim()
+        End Try
+    End Function
+
+    Private Function IsValidOfficialPclCandidate(CandidatePath As String) As Boolean
+        If String.IsNullOrWhiteSpace(CandidatePath) Then Return False
+        Dim Normalized As String = NormalizeExeFullPath(CandidatePath)
+        If String.IsNullOrEmpty(Normalized) OrElse Not IO.File.Exists(Normalized) Then Return False
+        If Not Normalized.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) Then Return False
+        Dim SelfPath As String = NormalizeExeFullPath(PathExe)
+        If String.Equals(Normalized, SelfPath, StringComparison.OrdinalIgnoreCase) Then Return False
+        Dim FileName As String = IO.Path.GetFileName(Normalized)
+        If FileName.StartsWith("PCLLK", StringComparison.OrdinalIgnoreCase) OrElse
+           FileName.IndexOf("Linking", StringComparison.OrdinalIgnoreCase) >= 0 Then
+            Return False
+        End If
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' 扫描常见目录下可能安装的官方 PCL 可执行文件（不读取第三方软件的私有注册表凭证）。
+    ''' </summary>
+    Friend Function FindOfficialPclExecutables() As List(Of String)
+        Dim Results As New List(Of String)
+        Dim Seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim CandidateDirs As New List(Of String) From {
+            Paths.Base,
+            IO.Path.GetDirectoryName(Paths.Base.TrimEnd("\"c)),
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
+        }
+        Try
+            If Not String.IsNullOrWhiteSpace(McFolderSelected) Then
+                CandidateDirs.Add(McFolderSelected)
+                CandidateDirs.Add(IO.Path.GetDirectoryName(McFolderSelected.TrimEnd("\"c)))
+            End If
+        Catch
+        End Try
+
+        For Each DirPath In CandidateDirs
+            If String.IsNullOrWhiteSpace(DirPath) OrElse Not IO.Directory.Exists(DirPath) Then Continue For
+            Try
+                For Each ExeFile In IO.Directory.GetFiles(DirPath, "*.exe", IO.SearchOption.TopDirectoryOnly)
+                    Dim Name As String = IO.Path.GetFileName(ExeFile)
+                    Dim MatchesPcl As Boolean =
+                        Name.Equals("PCL.exe", StringComparison.OrdinalIgnoreCase) OrElse
+                        Name.Equals("PCL2.exe", StringComparison.OrdinalIgnoreCase) OrElse
+                        Name.StartsWith("Plain Craft Launcher", StringComparison.OrdinalIgnoreCase) OrElse
+                        (Name.StartsWith("PCL", StringComparison.OrdinalIgnoreCase) AndAlso Not Name.StartsWith("PCLLK", StringComparison.OrdinalIgnoreCase))
+                    If Not MatchesPcl Then Continue For
+                    Dim Normalized As String = NormalizeExeFullPath(ExeFile)
+                    If IsValidOfficialPclCandidate(Normalized) AndAlso Seen.Add(Normalized) Then
+                        Results.Add(Normalized)
+                    End If
+                Next
+            Catch
+            End Try
+        Next
+        Return Results
+    End Function
+
+    ''' <summary>
+    ''' 解析官方 PCL 路径：优先读取用户保存的路径，否则按需在常见目录自动查找。
+    ''' </summary>
+    Friend Function ResolveOfficialPclPath(Optional AllowAutoDetect As Boolean = True) As String
+        Try
+            Dim Configured As String = Settings.Get(Of String)("ToolOfficialPclPath")
+            If IsValidOfficialPclCandidate(Configured) Then
+                Return NormalizeExeFullPath(Configured)
+            End If
+        Catch
+        End Try
+        If Not AllowAutoDetect Then Return ""
+        Return FindOfficialPclExecutables().FirstOrDefault()
+    End Function
+
+    ''' <summary>
+    ''' 弹窗让用户手动选择本地官方 PCL 可执行文件并保存配置。
+    ''' </summary>
+    Friend Function SelectOfficialPclExecutable() As String
+        Dim Chosen As String = Nothing
+        RunInUiWait(
+        Sub()
+            Chosen = Dialogs.SelectFile("选择本地官方 PCL 可执行文件（如 Plain Craft Launcher 2.exe / PCL2.exe）", False, filter:="PCL 可执行文件 (*.exe)|*.exe").FirstOrDefault()
+        End Sub)
+        If String.IsNullOrWhiteSpace(Chosen) Then Return ""
+        Dim Normalized As String = NormalizeExeFullPath(Chosen)
+        If String.Equals(Normalized, NormalizeExeFullPath(PathExe), StringComparison.OrdinalIgnoreCase) OrElse
+           IO.Path.GetFileName(Normalized).StartsWith("PCLLK", StringComparison.OrdinalIgnoreCase) Then
+            Hint("不能选择 PCL Linking 自身，请选择原版官方 PCL2 可执行文件！", HintType.Red)
+            Return ""
+        End If
+        If Not IO.File.Exists(Normalized) Then
+            Hint("所选文件不存在！", HintType.Red)
+            Return ""
+        End If
+        Settings.Set("ToolOfficialPclPath", Normalized)
+        RunInUi(
+        Sub()
+            If FrmSetupLaunch IsNot Nothing AndAlso FrmSetupLaunch.TextOfficialPclPath IsNot Nothing Then
+                FrmSetupLaunch.TextOfficialPclPath.Text = Normalized
+            End If
+        End Sub)
+        Hint($"已保存官方 PCL 路径：{IO.Path.GetFileName(Normalized)}", HintType.Green)
+        Return Normalized
+    End Function
+
+    ''' <summary>
+    ''' 启动本地官方 PCL 进行正版验证与游戏启动（PCL Linking 保持后台运行提供联机与工具功能）。
+    ''' </summary>
+    Friend Function TryLaunchOfficialPcl(Optional AskConfirmIfAutoDetected As Boolean = False) As Boolean
+        Dim Configured As String = ""
+        Try
+            Configured = Settings.Get(Of String)("ToolOfficialPclPath")
+        Catch
+        End Try
+        Dim ExplicitValid As Boolean = IsValidOfficialPclCandidate(Configured)
+        Dim TargetPath As String = If(ExplicitValid, NormalizeExeFullPath(Configured), FindOfficialPclExecutables().FirstOrDefault())
+
+        If String.IsNullOrEmpty(TargetPath) Then
+            Select Case MyMsgBox("未检测到本地官方 PCL 可执行文件。" & vbCrLf &
+                                  "请选择你电脑上已下载的官方 PCL（例如 Plain Craft Launcher 2.exe / PCL2.exe），之后即可一键代为启动正版验证。",
+                                  "选择官方 PCL", "浏览选择 PCL.exe", "前往 PCL 开源主页", "取消")
+                Case 1
+                    TargetPath = SelectOfficialPclExecutable()
+                    If String.IsNullOrEmpty(TargetPath) Then Return False
+                Case 2
+                    OpenWebsite("https://github.com/Meloong-Git/PCL")
+                    Return False
+                Case Else
+                    Return False
+            End Select
+        ElseIf Not ExplicitValid AndAlso AskConfirmIfAutoDetected Then
+            Select Case MyMsgBox($"检测到本地疑似官方 PCL 程序：{vbCrLf}{TargetPath}{vbCrLf}{vbCrLf}是否将该路径保存并立即打开它完成正版验证？",
+                                  "官方 PCL 协同验证", "使用此官方 PCL 启动", "重新选择 PCL.exe", "取消")
+                Case 1
+                    Settings.Set("ToolOfficialPclPath", TargetPath)
+                    RunInUi(Sub() If FrmSetupLaunch IsNot Nothing AndAlso FrmSetupLaunch.TextOfficialPclPath IsNot Nothing Then FrmSetupLaunch.TextOfficialPclPath.Text = TargetPath)
+                Case 2
+                    TargetPath = SelectOfficialPclExecutable()
+                    If String.IsNullOrEmpty(TargetPath) Then Return False
+                Case Else
+                    Return False
+            End Select
+        End If
+
+        Try
+            Dim Info As New Diagnostics.ProcessStartInfo With {
+                .FileName = TargetPath,
+                .WorkingDirectory = IO.Path.GetDirectoryName(TargetPath),
+                .UseShellExecute = True
+            }
+            Diagnostics.Process.Start(Info)
+            Hint($"已打开官方 PCL（{IO.Path.GetFileName(TargetPath)}），请在其中完成正版登录并启动游戏；PCL Linking 将继续为你提供联机、好友与百宝箱！", HintType.Green)
+            Logger.Info($"已拉起官方 PCL 协同验证：{TargetPath}")
+            Return True
+        Catch ex As Exception
+            Logger.Error(ex, $"启动官方 PCL 失败：{TargetPath}", LogBehavior.Alert)
+            Return False
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 弹窗快速输入并保存自定义微软 OAuth Client ID。
+    ''' </summary>
+    Friend Function ConfigureMsClientIdInteractive() As Boolean
+        Dim CurrentId As String = GetEffectiveMsOAuthClientId()
+        Dim RuleList As New ObjectModel.Collection(Of Validate) From {New ValidateNullable}
+        Dim InputVal As String = MyMsgBoxInput(
+            "配置微软 OAuth Client ID",
+            "请填写你自己的、且已通过 Mojang Minecraft API 审核的 Microsoft Entra（Azure）应用 Client ID；留空可清除已保存配置。" & vbCrLf &
+            "提示：也可通过系统/启动环境变量 PCL_MS_CLIENT_ID 提供，或在「设置 → 启动 → 正版登录与官方 PCL 协同」中详细管理。",
+            CurrentId,
+            RuleList,
+            HintText:="例如 00000000-0000-0000-0000-000000000000",
+            Button1:="保存",
+            Button2:="取消")
+        If InputVal Is Nothing Then Return False
+        Dim Trimmed As String = InputVal.Trim()
+        Settings.Set("ToolMsOAuthClientId", Trimmed)
+        RunInUi(
+        Sub()
+            If FrmSetupLaunch IsNot Nothing AndAlso FrmSetupLaunch.TextMsOAuthClientId IsNot Nothing Then
+                FrmSetupLaunch.TextMsOAuthClientId.Text = Trimmed
+            End If
+            If FrmLoginMs IsNot Nothing Then FrmLoginMs.UpdateAuthModeUi()
+        End Sub)
+        If String.IsNullOrEmpty(Trimmed) Then
+            Hint("已清空自定义微软 Client ID。", HintType.Blue)
+        Else
+            Hint("已保存自定义微软 Client ID（DPAPI 加密存储），现在可直接点击「登录」测试正版验证。", HintType.Green)
+        End If
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' 当 PCLLK 无法直接执行微软正版验证时，统一弹出选择引导（官方 PCL 协同 / 填写 Client ID / 取消）。
+    ''' </summary>
+    Friend Sub PromptConfigureMsAuthFallback(Optional ContextMessage As String = Nothing)
+        Dim Prefix As String = If(String.IsNullOrWhiteSpace(ContextMessage),
+            "当前无法直接通过 PCL Linking 完成微软正版验证（开源版本未内置受限的微软 Client ID）。",
+            ContextMessage.Trim())
+        Dim Choice As Integer = MyMsgBox(
+            Prefix & vbCrLf & vbCrLf &
+            "你可以选择以下任一方式继续：" & vbCrLf &
+            "1. 官方 PCL 代验证：一键打开本地官方 PCL 完成正版验证并启动游戏（PCL Linking 可继续在后台为你提供 EasyTier 联机、好友与百宝箱）。" & vbCrLf &
+            "2. 配置微软 Client ID：填入已通过 Mojang 审核的微软应用 Client ID，之后由 PCL Linking 直接完成登录。",
+            "正版登录方式引导", "官方 PCL 代启动", "配置 Client ID", "取消")
+        Select Case Choice
+            Case 1
+                TryLaunchOfficialPcl(AskConfirmIfAutoDetected:=True)
+            Case 2
+                ConfigureMsClientIdInteractive()
+        End Select
+    End Sub
+
+#End Region
 
     ''' <summary>
     ''' 获取当前生效的 CurseForge API Key：优先读取用户在设置中填写的 Key，其次读取环境变量。

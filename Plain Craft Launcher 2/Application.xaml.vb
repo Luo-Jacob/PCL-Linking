@@ -75,6 +75,7 @@ RetryCacheCheck:
             If Environment.OSVersion.Version < New Version(6, 2) Then 'Windows 7 回退（#8519）
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 Or SecurityProtocolType.Tls Or SecurityProtocolType.Tls11 Or SecurityProtocolType.Tls12
             End If
+            ShouldValidateSslCertificateOnLogin(Settings.Get(Of Boolean)("ToolDownloadCert"))
             '设置初始窗口
             If Settings.Get(Of Boolean)("UiLauncherLogo") Then
                 FrmStart = New SplashScreen("Images/splash.png") 'PCL Linking：启动闪屏改用菱形图标
@@ -218,7 +219,25 @@ RetryCacheCheck:
 
     '控件模板事件（点击账号条目旁的删除按钮）
     Private Sub MyIconButton_Click(sender As Object, e As EventArgs)
-        If Settings.Get(Of McLoginType)("LoginType") = McLoginType.Auth Then
+        Dim LoginTypeNow = Settings.Get(Of McLoginType)("LoginType")
+        If LoginTypeNow = McLoginType.Ms Then
+            Dim AccountToRemove As String = If(sender.Tag, "").ToString()
+            Dim MsJson As JObject = Settings.Get(Of String)("LoginMsJson").DeserializeJson()
+            MsJson.Remove(AccountToRemove)
+            Settings.Set("LoginMsJson", MsJson.ToString(Newtonsoft.Json.Formatting.None))
+            If FrmLoginMs IsNot Nothing Then
+                Dim TargetItem = FrmLoginMs.ComboAccounts.Items.OfType(Of MyListItem)().FirstOrDefault(Function(it) it.Title = AccountToRemove)
+                If TargetItem IsNot Nothing Then
+                    Dim WasSelected As Boolean = (FrmLoginMs.ComboAccounts.SelectedItem Is TargetItem)
+                    FrmLoginMs.ComboAccounts.Items.Remove(TargetItem)
+                    If WasSelected AndAlso FrmLoginMs.ComboAccounts.Items.Count > 0 Then
+                        FrmLoginMs.ComboAccounts.SelectedIndex = 0
+                    End If
+                End If
+            End If
+            Return
+        End If
+        If LoginTypeNow = McLoginType.Auth Then
             Dim EmailToRemove As String = If(sender.Tag, "").ToString()
             Dim Emails As New List(Of String)
             Dim Passes As New List(Of String)

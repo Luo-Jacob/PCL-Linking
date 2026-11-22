@@ -32,7 +32,10 @@ public enum ResourceTypes {
 public enum ResourcePlatforms {
     CurseForge = 1,
     Modrinth = 2,
+    Hangar = 4,
+    SpigotMC = 8,
     Any = CurseForge | Modrinth,
+    AllPlugins = CurseForge | Modrinth | Hangar | SpigotMC,
 }
 
 /// <summary>

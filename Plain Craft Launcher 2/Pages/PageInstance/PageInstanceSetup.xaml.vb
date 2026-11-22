@@ -340,7 +340,9 @@ PreFin:
     End Sub
     Private Sub UpdateServerLoginUi()
         If PanServerAuth Is Nothing OrElse ComboServerLogin Is Nothing Then Return
-        Dim IsAuthSelected As Boolean = (ComboServerLogin.SelectedIndex = 1)
+        Dim SelectedItem = TryCast(ComboServerLogin.SelectedItem, DependencyObject)
+        Dim SelectedVal As String = SettingService.GetValue(SelectedItem)
+        Dim IsAuthSelected As Boolean = (SelectedVal = "3")
         PanServerAuth.Visibility = If(IsAuthSelected, Visibility.Visible, Visibility.Collapsed)
     End Sub
 

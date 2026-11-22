@@ -339,6 +339,8 @@ Public Class PageToolsServer
         End Try
         LoadExistingProperties(P.ServerDir, ShowHint:=False)
         RefreshPlayerJsonLists(P.ServerDir)
+        RefreshServerPluginsList(P.ServerDir)
+        LoadPerformanceConfigToUi(P.ServerDir)
     End Sub
 
     Private Sub ComboServerProfiles_SelectionChanged() Handles ComboServerProfiles.SelectionChanged
@@ -405,10 +407,16 @@ Public Class PageToolsServer
                 IsUpdatingUi = False
             End If
             RefreshServerProfilesCombo(SavedDir)
+            RefreshServerPluginsList(SavedDir)
+            LoadPerformanceConfigToUi(SavedDir)
             InitMcVersionsAsync()
         Else
             Dim CurDir = TextServerDir.Text.Trim()
-            If Directory.Exists(CurDir) Then RefreshPlayerJsonLists(CurDir)
+            If Directory.Exists(CurDir) Then
+                RefreshPlayerJsonLists(CurDir)
+                RefreshServerPluginsList(CurDir)
+                LoadPerformanceConfigToUi(CurDir)
+            End If
         End If
         SyncGuardBackupConfigFromUi()
         If MonitorTimer Is Nothing Then
@@ -567,6 +575,8 @@ Public Class PageToolsServer
         SaveServerDir(Chosen)
         LoadExistingProperties(Chosen)
         RefreshPlayerJsonLists(Chosen)
+        RefreshServerPluginsList(Chosen)
+        LoadPerformanceConfigToUi(Chosen)
         RefreshServerProfilesCombo(Chosen)
         RefreshServerMonitorPanel()
     End Sub
@@ -808,6 +818,8 @@ Public Class PageToolsServer
                         .JvmXmx = Xmx
                     })
                     RefreshServerProfilesCombo(ServerDir)
+                    RefreshServerPluginsList(ServerDir)
+                    LoadPerformanceConfigToUi(ServerDir)
                     LabServerStatus.Text = $"{Core} {McVer} 服务端已就绪！"
                     Hint($"服务端 {Core} {McVer} 生成成功！", HintType.Green)
                 End Sub)
@@ -1050,10 +1062,15 @@ Public Class PageToolsServer
         SaveServerDir(ServerDir)
 
         Dim JavaExe = GetSelectedJavaExe()
+        Dim JavaMajor = GetSelectedJavaMajor()
+        Dim JvmPresetTag = GetSelectedJvmPresetTag()
+        Dim XmxMb = ServerConfigAndPluginCore.ParseMemoryToMb(Xmx)
+        Dim ExtraJvmFlags = ServerConfigAndPluginCore.BuildJvmPresetFlags(JvmPresetTag, XmxMb, JavaMajor)
+        Dim JvmPrefix = If(String.IsNullOrWhiteSpace(ExtraJvmFlags), "", " " & ExtraJvmFlags)
         Dim NoguiArg = If(ChkServerNogui.Checked, " nogui", "")
         Dim Args As String = If(Not String.IsNullOrEmpty(WinArgs),
-            $"-Xms{Xms} -Xmx{Xmx} @""{WinArgs}""{NoguiArg}",
-            $"-Xms{Xms} -Xmx{Xmx} -jar ""{ServerJar}""{NoguiArg}")
+            $"-Xms{Xms} -Xmx{Xmx}{JvmPrefix} @""{WinArgs}""{NoguiArg}",
+            $"-Xms{Xms} -Xmx{Xmx}{JvmPrefix} -jar ""{ServerJar}""{NoguiArg}")
 
         AppendConsole($"=== {If(IsAutoRestart, $"[自动重启 #{ConsecutiveCrashCount}] ", "")}正在启动服务端：{JavaExe} {Args} ===")
         IsIntentionalServerStop = False
@@ -1987,6 +2004,425 @@ Public Class PageToolsServer
                 {"name", Name}
             },
             "已将 {0} 加入白名单")
+    End Sub
+
+#End Region
+
+#Region "服务端插件管理、更新与高级性能配置"
+
+    Private LastScannedPlugins As New List(Of ServerConfigAndPluginCore.ServerPluginInfo)
+
+    Private Function GetSelectedJavaMajor() As Integer
+        Dim Item = TryCast(ComboServerJava?.SelectedItem, MyComboBoxItem)
+        Dim Content = If(Item?.Content?.ToString(), "")
+        Dim M = System.Text.RegularExpressions.Regex.Match(Content, "Java\s+(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        Dim MajorVal As Integer = 21
+        If M.Success AndAlso Integer.TryParse(M.Groups(1).Value, MajorVal) Then Return MajorVal
+        Return 21
+    End Function
+
+    Private Function GetSelectedJvmPresetTag() As String
+        Dim Item = TryCast(ComboServerJvmPreset?.SelectedItem, MyComboBoxItem)
+        Return If(Item?.Tag?.ToString(), "Standard")
+    End Function
+
+    Private Sub RefreshServerPluginsList(ServerDir As String)
+        If PanServerPluginList Is Nothing OrElse LabServerPluginsSummary Is Nothing Then Return
+        PanServerPluginList.Children.Clear()
+        HintServerPluginDeps.Visibility = Visibility.Collapsed
+        LastScannedPlugins.Clear()
+
+        If String.IsNullOrWhiteSpace(ServerDir) OrElse Not Directory.Exists(ServerDir) Then
+            LabServerPluginsSummary.Text = "请先生成或选择服务端目录，然后查看 plugins 目录下的插件。"
+            Return
+        End If
+
+        Dim Plugins = ServerConfigAndPluginCore.InspectServerPluginsDir(ServerDir)
+        LastScannedPlugins = Plugins
+        Dim EnabledCount = Plugins.Where(Function(p) p.IsEnabled).Count()
+        Dim DisabledCount = Plugins.Count - EnabledCount
+        If Plugins.Count = 0 Then
+            LabServerPluginsSummary.Text = "plugins 目录中暂无插件 (.jar)，可点击下方「下载新插件」快速安装。"
+            Return
+        End If
+        LabServerPluginsSummary.Text = $"已扫描 {Plugins.Count} 个插件（已启用 {EnabledCount} 个，已禁用 {DisabledCount} 个）"
+
+        Dim MissingDeps = ServerConfigAndPluginCore.FindMissingPluginDependencies(Plugins)
+        If MissingDeps.Any() Then
+            HintServerPluginDeps.Text = $"检测到 {MissingDeps.Count} 项前置插件缺失：" & String.Join("；", MissingDeps.Take(4)) & If(MissingDeps.Count > 4, "……", "")
+            HintServerPluginDeps.Visibility = Visibility.Visible
+        End If
+
+        For Each P In Plugins
+            Dim InfoParts As New List(Of String)
+            InfoParts.Add(If(P.IsEnabled, $"已启用 · {P.PlatformKind}", "已禁用"))
+            If Not String.IsNullOrWhiteSpace(P.Version) Then InfoParts.Add("v" & P.Version)
+            If P.Depends.Any() Then InfoParts.Add($"前置：{String.Join(", ", P.Depends)}")
+            InfoParts.Add(P.FileName)
+
+            Dim Row As New MyListItem With {
+                .Title = P.Name,
+                .Info = String.Join("  |  ", InfoParts),
+                .Height = 40,
+                .Logo = If(P.IsEnabled, "pack://application:,,,/images/Blocks/CommandBlock.png", "pack://application:,,,/images/Blocks/CobbleStone.png")
+            }
+            Dim Captured = P
+            Dim BtnToggle As New MyIconButton With {
+                .Logo = If(P.IsEnabled, Logo.IconButtonStop, Logo.IconButtonCheck),
+                .ToolTip = If(P.IsEnabled, "禁用插件（改为 .jar.disabled）", "启用插件")
+            }
+            AddHandler BtnToggle.Click,
+            Sub()
+                If IsServerRunning() Then
+                    Hint("服务端正在运行，为防止插件文件被占用锁定，请先安全停服再启用/禁用插件！", HintType.Red)
+                    Return
+                End If
+                Try
+                    Dim Src = Captured.FilePath
+                    Dim Dst = If(Captured.IsEnabled,
+                        Src & ".disabled",
+                        Src.Substring(0, Src.Length - ".disabled".Length))
+                    If File.Exists(Dst) Then
+                        Hint($"目标文件已存在，无法切换：{Path.GetFileName(Dst)}", HintType.Red)
+                        Return
+                    End If
+                    File.Move(Src, Dst)
+                    RefreshServerPluginsList(ServerDir)
+                    RefreshServerMonitorPanel()
+                    Hint($"{If(Captured.IsEnabled, "已禁用", "已启用")}插件「{Captured.Name}」", HintType.Green)
+                Catch ex As Exception
+                    Hint($"切换插件状态失败：{ex.Message}", HintType.Red)
+                End Try
+            End Sub
+
+            Dim BtnDelete As New MyIconButton With {
+                .Logo = Logo.IconButtonDelete,
+                .ToolTip = "删除插件文件"
+            }
+            AddHandler BtnDelete.Click,
+            Sub()
+                If IsServerRunning() Then
+                    Hint("服务端正在运行，请先安全停服再删除插件！", HintType.Red)
+                    Return
+                End If
+                If MyMsgBox($"确定要永久删除插件「{Captured.Name}」({Captured.FileName}) 吗？", "删除服务端插件", "确认删除", "取消", IsWarn:=True) <> 1 Then Return
+                Try
+                    If File.Exists(Captured.FilePath) Then File.Delete(Captured.FilePath)
+                    RefreshServerPluginsList(ServerDir)
+                    RefreshServerMonitorPanel()
+                    Hint($"已删除插件「{Captured.Name}」", HintType.Green)
+                Catch ex As Exception
+                    Hint($"删除插件失败：{ex.Message}", HintType.Red)
+                End Try
+            End Sub
+
+            Row.Buttons = {BtnToggle, BtnDelete}
+            PanServerPluginList.Children.Add(Row)
+        Next
+    End Sub
+
+    Private Sub BtnRefreshServerPlugins_Click() Handles BtnRefreshServerPlugins.Click
+        RefreshServerPluginsList(TextServerDir.Text.Trim())
+    End Sub
+
+    Private Sub BtnInstallMorePlugins_Click() Handles BtnInstallMorePlugins.Click
+        FrmMain.PageChange(FormMain.PageType.Download, FormMain.PageSubType.DownloadPlugin)
+    End Sub
+
+    Private Sub BtnCheckPluginDeps_Click() Handles BtnCheckPluginDeps.Click
+        Dim ServerDir = TextServerDir.Text.Trim()
+        If String.IsNullOrWhiteSpace(ServerDir) OrElse Not Directory.Exists(ServerDir) Then
+            Hint("请先设置有效的服务端目录！", HintType.Red)
+            Return
+        End If
+        Dim Plugins = ServerConfigAndPluginCore.InspectServerPluginsDir(ServerDir)
+        Dim Missing = ServerConfigAndPluginCore.FindMissingPluginDependencies(Plugins)
+        If Not Plugins.Any() Then
+            Hint("plugins 目录中尚未安装任何插件！", HintType.Blue)
+        ElseIf Not Missing.Any() Then
+            MyMsgBox($"已扫描 {Plugins.Where(Function(p) p.IsEnabled).Count()} 个已启用插件，所有 plugin.yml / paper-plugin.yml 声明的必需前置插件均已满足。", "服务端插件依赖体检通过", "太棒了")
+        Else
+            MyMsgBox("检测到以下前置插件缺失（可能会导致相应插件无法加载）：" & vbCrLf & vbCrLf & String.Join(vbCrLf, Missing.Select(Function(s) "• " & s)),
+                     "服务端插件依赖体检", "我知道了", IsWarn:=True)
+        End If
+    End Sub
+
+    Private Shared Function NormalizePluginVerText(Raw As String) As String
+        Dim S = If(Raw, "").Trim()
+        If S.StartsWith("v", StringComparison.OrdinalIgnoreCase) AndAlso S.Length > 1 AndAlso Char.IsDigit(S(1)) Then
+            S = S.Substring(1)
+        End If
+        Return S
+    End Function
+
+    Private Sub BtnCheckPluginUpdates_Click() Handles BtnCheckPluginUpdates.Click
+        Dim ServerDir = TextServerDir.Text.Trim()
+        If String.IsNullOrWhiteSpace(ServerDir) OrElse Not Directory.Exists(ServerDir) Then
+            Hint("请先设置有效的服务端目录！", HintType.Red)
+            Return
+        End If
+        Dim EnabledPlugins = ServerConfigAndPluginCore.InspectServerPluginsDir(ServerDir).Where(Function(p) p.IsEnabled).ToList()
+        If Not EnabledPlugins.Any() Then
+            Hint("plugins 目录中没有可检查更新的已启用插件！", HintType.Blue)
+            Return
+        End If
+
+        BtnCheckPluginUpdates.IsEnabled = False
+        Dim TargetMcVer = GetTargetMcVersion()
+        Hint($"正在通过 Modrinth / Hangar 为 {EnabledPlugins.Count} 个服务端插件检查更新……", HintType.Blue)
+
+        RunInNewThread(
+        Sub()
+            Try
+                Dim HashToPlugin As New Dictionary(Of String, ServerConfigAndPluginCore.ServerPluginInfo)(StringComparer.OrdinalIgnoreCase)
+                For Each P In EnabledPlugins
+                    Try
+                        P.Sha1 = ServerConfigAndPluginCore.ComputeFileSha1Lower(P.FilePath)
+                        If Not String.IsNullOrEmpty(P.Sha1) AndAlso Not HashToPlugin.ContainsKey(P.Sha1) Then
+                            HashToPlugin(P.Sha1) = P
+                        End If
+                    Catch
+                    End Try
+                Next
+
+                Dim Updates As New List(Of (Installed As ServerConfigAndPluginCore.ServerPluginInfo, NewVer As ResourceVersion, SourceLabel As String))
+                Dim MatchedPlugins As New HashSet(Of ServerConfigAndPluginCore.ServerPluginInfo)
+
+                '1. Modrinth SHA-1 批量检查更新
+                If HashToPlugin.Any() Then
+                    Try
+                        Dim ReqBody As New JObject From {
+                            {"hashes", New JArray(HashToPlugin.Keys)},
+                            {"algorithm", "sha1"},
+                            {"loaders", New JArray("paper", "purpur", "spigot", "bukkit", "velocity")}
+                        }
+                        If Not String.IsNullOrWhiteSpace(TargetMcVer) Then
+                            ReqBody("game_versions") = New JArray(TargetMcVer)
+                        End If
+                        Dim RespObj = TryCast(DlModRequest("https://api.modrinth.com/v2/version_files/update", HttpMethod.Post, ReqBody.ToString(Newtonsoft.Json.Formatting.None), "application/json"), JObject)
+                        If RespObj IsNot Nothing Then
+                            For Each Prop In RespObj.Properties()
+                                Dim OldHash = Prop.Name
+                                Dim Installed As ServerConfigAndPluginCore.ServerPluginInfo = Nothing
+                                If Not HashToPlugin.TryGetValue(OldHash, Installed) Then Continue For
+                                Dim VerObj = TryCast(Prop.Value, JObject)
+                                If VerObj Is Nothing Then Continue For
+                                MatchedPlugins.Add(Installed)
+                                Dim ParsedVer = ResourceVersion.FromPlatformJson(VerObj, ResourceTypes.Plugin)
+                                If ParsedVer IsNot Nothing AndAlso ParsedVer.DownloadAvailable AndAlso
+                                   Not String.IsNullOrEmpty(ParsedVer.Hash) AndAlso
+                                   Not ParsedVer.Hash.Equals(OldHash, StringComparison.OrdinalIgnoreCase) Then
+                                    Updates.Add((Installed, ParsedVer, "Modrinth"))
+                                End If
+                            Next
+                        End If
+                    Catch ex As Exception
+                        Logger.Warn(ex, "Modrinth 插件批量检查更新失败，将继续尝试 Hangar")
+                    End Try
+                End If
+
+                '2. 未命中 Modrinth 的插件按名称精确查询 Hangar
+                For Each P In EnabledPlugins
+                    If MatchedPlugins.Contains(P) OrElse String.IsNullOrWhiteSpace(P.Name) Then Continue For
+                    Try
+                        Dim SearchUrl = $"https://hangar.papermc.io/api/v1/projects?q={StringUtils.UrlEscape(P.Name)}&limit=5"
+                        Dim HangarSearch = TryCast(DlModRequest(SearchUrl), JObject)
+                        Dim Hits = TryCast(HangarSearch?("result"), JArray)
+                        If Hits Is Nothing OrElse Hits.Count = 0 Then Continue For
+                        Dim ExactHit = Hits.OfType(Of JObject)().FirstOrDefault(Function(h) String.Equals(h("name")?.ToString(), P.Name, StringComparison.OrdinalIgnoreCase))
+                        If ExactHit Is Nothing Then Continue For
+                        Dim Owner = ExactHit("namespace")?("owner")?.ToString()
+                        Dim Slug = ExactHit("namespace")?("slug")?.ToString()
+                        If String.IsNullOrWhiteSpace(Owner) OrElse String.IsNullOrWhiteSpace(Slug) Then Continue For
+                        Dim Versions = ResourceVersion.FromProjectId($"{Owner}/{Slug}", ResourcePlatforms.Hangar, LoadDependencies:=False)
+                        If Versions Is Nothing OrElse Not Versions.Any() Then Continue For
+                        Dim Cand = Versions.Where(Function(v) v.DownloadAvailable AndAlso Not String.IsNullOrEmpty(v.DownloadUrls?.FirstOrDefault())).
+                            OrderByDescending(Function(v) v.ReleaseDate).FirstOrDefault()
+                        If Cand Is Nothing Then Continue For
+                        Dim CurV = NormalizePluginVerText(P.Version)
+                        Dim NewV = NormalizePluginVerText(Cand.Version)
+                        If CurV <> "" AndAlso NewV <> "" AndAlso McUtils.CompareVersion(NewV, CurV) > 0 Then
+                            Updates.Add((P, Cand, "Hangar"))
+                        End If
+                    Catch
+                    End Try
+                Next
+
+                RunInUi(
+                Sub()
+                    BtnCheckPluginUpdates.IsEnabled = True
+                    If Not Updates.Any() Then
+                        MyMsgBox($"已完成 {EnabledPlugins.Count} 个插件的更新检查，当前全部为最新适配版本（或作者未发布到 Modrinth/Hangar 哈希库）。", "服务端插件检查更新")
+                        Return
+                    End If
+
+                    Dim Sb As New StringBuilder()
+                    Sb.AppendLine($"发现 {Updates.Count} 个可升级的服务端插件：")
+                    Sb.AppendLine()
+                    For Each U In Updates.Take(10)
+                        Sb.AppendLine($"• {U.Installed.Name}：v{U.Installed.Version} → v{If(U.NewVer.Version, U.NewVer.Display)} [{U.SourceLabel}]")
+                    Next
+                    If Updates.Count > 10 Then Sb.AppendLine($"……等共 {Updates.Count} 个")
+                    If MyMsgBox(Sb.ToString().TrimEnd(), "发现服务端插件更新", "一键下载更新", "取消") <> 1 Then Return
+
+                    If IsServerRunning() Then
+                        Hint("服务端正在运行，为防止旧插件被占用，请先安全停服后再执行插件更新！", HintType.Red)
+                        Return
+                    End If
+
+                    Dim PluginsDir = Path.Combine(ServerDir, "plugins")
+                    Directory.CreateDirectory(PluginsDir)
+                    Dim NetFiles As New List(Of NetFile)
+                    Dim OldFilesToRemove As New List(Of String)
+                    For Each U In Updates
+                        Dim TargetPath = Path.Combine(PluginsDir, U.NewVer.FileName)
+                        NetFiles.Add(U.NewVer.ToNetFile(TargetPath, ResourceVersion.DownloadReason.Update))
+                        If Not U.Installed.FilePath.Equals(TargetPath, StringComparison.OrdinalIgnoreCase) Then
+                            OldFilesToRemove.Add(U.Installed.FilePath)
+                        End If
+                    Next
+                    Dim Loaders As New List(Of LoaderBase) From {
+                        New LoaderDownload("下载新版插件", NetFiles) With {.ProgressWeight = 8, .Block = True},
+                        New LoaderTask(Of Integer, Integer)("清理旧版插件",
+                        Sub()
+                            For Each OldPath In OldFilesToRemove
+                                Try
+                                    If File.Exists(OldPath) Then File.Delete(OldPath)
+                                Catch
+                                End Try
+                            Next
+                        End Sub) With {.ProgressWeight = 0.5}
+                    }
+                    Dim UpdLoader As New LoaderCombo(Of Integer)($"服务端插件更新（{Updates.Count} 个） ", Loaders) With {.OnStateChanged =
+                    Sub(MyLoader)
+                        LoaderStateChangedHintOnly(MyLoader)
+                        If MyLoader.State = LoadState.Finished Then
+                            RunInUi(
+                            Sub()
+                                RefreshServerPluginsList(ServerDir)
+                                RefreshServerMonitorPanel()
+                                Hint($"已完成 {Updates.Count} 个服务端插件更新！", HintType.Green)
+                            End Sub)
+                        End If
+                    End Sub}
+                    UpdLoader.Start(1)
+                    LoaderTaskbarAdd(UpdLoader)
+                    FrmMain.BtnExtraDownload.ShowRefresh()
+                End Sub)
+            Catch ex As Exception
+                Logger.Warn(ex, "检查服务端插件更新失败")
+                RunInUi(
+                Sub()
+                    BtnCheckPluginUpdates.IsEnabled = True
+                    Hint($"检查插件更新失败：{ex.Message}", HintType.Red)
+                End Sub)
+            End Try
+        End Sub, "Server Plugin Update Check")
+    End Sub
+
+    Private Sub BindPerformanceConfigFields(Cfg As ServerConfigAndPluginCore.ServerPerformanceConfig, Optional UpdateViewDistance As Boolean = False)
+        If TextPerfSimDist Is Nothing OrElse Cfg Is Nothing Then Return
+        IsUpdatingUi = True
+        Try
+            If UpdateViewDistance Then TextPropViewDistance.Text = Cfg.ViewDistance.ToString()
+            TextPerfSimDist.Text = Cfg.SimulationDistance.ToString()
+            TextPerfSpawnProt.Text = Cfg.SpawnProtection.ToString()
+            TextPerfNetCompress.Text = Cfg.NetworkCompressionThreshold.ToString()
+            TextPerfMaxTick.Text = Cfg.MaxTickTime.ToString()
+            TextPerfMonsters.Text = Cfg.MonsterSpawnLimit.ToString()
+            TextPerfAnimals.Text = Cfg.AnimalSpawnLimit.ToString()
+            TextPerfAutoSaveChunks.Text = Cfg.PaperMaxAutoSaveChunks.ToString()
+            ChkPerfAllowFlight.Checked = Cfg.AllowFlight
+            ChkPerfCommandBlock.Checked = Cfg.EnableCommandBlock
+            ChkPerfSyncChunk.Checked = Cfg.SyncChunkWrites
+            ChkPerfOptimizeExp.Checked = Cfg.PaperOptimizeExplosions
+            ChkPerfPreventUnloaded.Checked = Cfg.PaperPreventUnloadedChunks
+            For i As Integer = 0 To ComboServerJvmPreset.Items.Count - 1
+                Dim Item = TryCast(ComboServerJvmPreset.Items(i), MyComboBoxItem)
+                If String.Equals(Item?.Tag?.ToString(), Cfg.JvmPreset, StringComparison.OrdinalIgnoreCase) Then
+                    ComboServerJvmPreset.SelectedIndex = i
+                    Exit For
+                End If
+            Next
+        Finally
+            IsUpdatingUi = False
+        End Try
+    End Sub
+
+    Private Sub LoadPerformanceConfigToUi(ServerDir As String)
+        If TextPerfSimDist Is Nothing Then Return
+        BindPerformanceConfigFields(ServerConfigAndPluginCore.LoadPerformanceConfig(ServerDir))
+    End Sub
+
+    Private Function ReadPerformanceConfigFromUi() As ServerConfigAndPluginCore.ServerPerformanceConfig
+        Dim ParseIntOrDefault =
+        Function(TextVal As String, DefaultVal As Integer) As Integer
+            Dim V As Integer
+            If Integer.TryParse(If(TextVal, "").Trim(), V) Then Return V
+            Return DefaultVal
+        End Function
+        Return New ServerConfigAndPluginCore.ServerPerformanceConfig With {
+            .ViewDistance = ParseIntOrDefault(TextPropViewDistance.Text, 10),
+            .SimulationDistance = ParseIntOrDefault(TextPerfSimDist.Text, 10),
+            .SpawnProtection = ParseIntOrDefault(TextPerfSpawnProt.Text, 16),
+            .NetworkCompressionThreshold = ParseIntOrDefault(TextPerfNetCompress.Text, 256),
+            .MaxTickTime = ParseIntOrDefault(TextPerfMaxTick.Text, 60000),
+            .MonsterSpawnLimit = ParseIntOrDefault(TextPerfMonsters.Text, 70),
+            .AnimalSpawnLimit = ParseIntOrDefault(TextPerfAnimals.Text, 10),
+            .PaperMaxAutoSaveChunks = ParseIntOrDefault(TextPerfAutoSaveChunks.Text, 24),
+            .AllowFlight = ChkPerfAllowFlight.Checked,
+            .EnableCommandBlock = ChkPerfCommandBlock.Checked,
+            .SyncChunkWrites = ChkPerfSyncChunk.Checked,
+            .PaperOptimizeExplosions = ChkPerfOptimizeExp.Checked,
+            .PaperPreventUnloadedChunks = ChkPerfPreventUnloaded.Checked,
+            .JvmPreset = GetSelectedJvmPresetTag()
+        }
+    End Function
+
+    Private Sub ApplyOptimizationPresetToUi(PresetName As String, DisplayTitle As String)
+        BindPerformanceConfigFields(ServerConfigAndPluginCore.BuildOptimizationPreset(PresetName), UpdateViewDistance:=True)
+        Hint($"已填入「{DisplayTitle}」参数预设，请点击「保存高级配置」写入服务端文件！", HintType.Blue)
+    End Sub
+
+    Private Sub BtnPresetSmoothCoop_Click() Handles BtnPresetSmoothCoop.Click
+        ApplyOptimizationPresetToUi("SmoothCoop", "联机流畅")
+    End Sub
+
+    Private Sub BtnPresetLowSpec_Click() Handles BtnPresetLowSpec.Click
+        ApplyOptimizationPresetToUi("LowSpec", "低配轻量")
+    End Sub
+
+    Private Sub BtnPresetVanilla_Click() Handles BtnPresetVanilla.Click
+        ApplyOptimizationPresetToUi("Vanilla", "原版默认")
+    End Sub
+
+    Private Sub BtnReloadPerfConfig_Click() Handles BtnReloadPerfConfig.Click
+        Dim ServerDir = TextServerDir.Text.Trim()
+        If String.IsNullOrWhiteSpace(ServerDir) OrElse Not Directory.Exists(ServerDir) Then
+            Hint("当前服务端目录不存在，无法读取！", HintType.Red)
+            Return
+        End If
+        LoadExistingProperties(ServerDir, ShowHint:=False)
+        LoadPerformanceConfigToUi(ServerDir)
+        Hint("已重新读取 server.properties / bukkit.yml / paper 配置！", HintType.Blue)
+    End Sub
+
+    Private Sub BtnSavePerfConfig_Click() Handles BtnSavePerfConfig.Click
+        Dim ServerDir = TextServerDir.Text.Trim()
+        If String.IsNullOrWhiteSpace(ServerDir) Then
+            Hint("请先设置服务端目录！", HintType.Red)
+            Return
+        End If
+        Try
+            Dim Cfg = ReadPerformanceConfigFromUi()
+            Dim Core = GetSelectedServerType()
+            Dim IsPluginCore = Core.Equals("Paper", StringComparison.OrdinalIgnoreCase) OrElse Core.Equals("Purpur", StringComparison.OrdinalIgnoreCase)
+            ServerConfigAndPluginCore.SavePerformanceConfig(ServerDir, Cfg, AllowCreatePluginYaml:=IsPluginCore)
+            SaveServerDir(ServerDir)
+            Hint("已保存高级性能配置与 JVM 预设！" & If(IsServerRunning(), "部分参数与 JVM 参数将在重启服务端后生效。", ""), HintType.Green)
+        Catch ex As Exception
+            Hint($"保存高级配置失败：{ex.Message}", HintType.Red)
+        End Try
     End Sub
 
 #End Region

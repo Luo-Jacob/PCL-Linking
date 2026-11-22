@@ -56,9 +56,35 @@ Public Class PageResource
             If _Type = Value Then Return
             _Type = Value
             BtnSearchInstallModPack.Visibility = If(Value = ResourceTypes.ModPack, Visibility.Visible, Visibility.Collapsed)
+            ConfigureSourceOptions()
         End Set
     End Property
     Private _Type As ResourceTypes = -1
+    Private _ConfiguredSourceType As ResourceTypes = -1
+
+    Private Sub ConfigureSourceOptions()
+        If ComboSearchSource Is Nothing OrElse PageType = -1 OrElse _ConfiguredSourceType = PageType Then Return
+        _ConfiguredSourceType = PageType
+        ComboSearchSource.Items.Clear()
+        If PageType = ResourceTypes.Plugin Then
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "全部", .Tag = "15", .IsSelected = True})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Modrinth", .Tag = "2"})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1"})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Hangar (PaperMC)", .Tag = "4"})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "SpigotMC", .Tag = "8"})
+            ComboSearchSource.ToolTip = "支持同时搜索 Modrinth、CurseForge、Hangar (PaperMC) 与 SpigotMC。" & vbCrLf &
+                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。"
+        ElseIf PageType = ResourceTypes.Map Then
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1", .IsSelected = True})
+            ComboSearchSource.ToolTip = "地图资源当前由 CurseForge 提供。"
+        Else
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "全部", .Tag = "3", .IsSelected = True})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Modrinth", .Tag = "2"})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1"})
+            ComboSearchSource.ToolTip = "支持同时搜索 Modrinth 与 CurseForge。" & vbCrLf &
+                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。"
+        End If
+    End Sub
 
 #End Region
 
@@ -78,6 +104,7 @@ Public Class PageResource
 
     Private Sub PageResource_Loaded(sender As Object, e As EventArgs) Handles Me.Loaded
         Static IsFirstLoaded As Boolean = False
+        ConfigureSourceOptions()
         '不知道从 Initialized 改成 Loaded 会不会有问题，但用 Initialized 会导致初始的筛选器修改被覆盖回默认值
         If TargetInstance IsNot Nothing Then
             '设置目标
@@ -159,17 +186,21 @@ Public Class PageResource
                 Next
             End If
             '页码
-            CardPages.Visibility = If(Storage.Results.Count > 40 OrElse
-                                      Storage.CurseForgeOffset < Storage.CurseForgeTotal OrElse Storage.ModrinthOffset < Storage.ModrinthTotal,
-                                      Visibility.Visible, Visibility.Collapsed)
+            Dim SpigotCanLoadMore As Boolean = PageType = ResourceTypes.Plugin AndAlso Storage.SpigotHasMore AndAlso
+                Loader.Input IsNot Nothing AndAlso Loader.Input.Sources.HasFlagF(ResourcePlatforms.SpigotMC)
+            Dim HasMoreRemote As Boolean =
+                Storage.CurseForgeOffset < Storage.CurseForgeTotal OrElse
+                Storage.ModrinthOffset < Storage.ModrinthTotal OrElse
+                Storage.HangarOffset < Storage.HangarTotal OrElse
+                SpigotCanLoadMore
+            CardPages.Visibility = If(Storage.Results.Count > 40 OrElse HasMoreRemote, Visibility.Visible, Visibility.Collapsed)
             LabPage.Text = Page + 1
             BtnPageFirst.IsEnabled = Page > 1
             BtnPageFirst.Opacity = If(Page > 1, 1, 0.2)
             BtnPageLeft.IsEnabled = Page > 0
             BtnPageLeft.Opacity = If(Page > 0, 1, 0.2)
             Dim IsRightEnabled As Boolean = '由于 WPF 的未知 bug，读取到的 IsEnabled 可能是错误的值（#3319）
-                Storage.Results.Count > PAGE_SIZE * (Page + 1) OrElse
-                Storage.CurseForgeOffset < Storage.CurseForgeTotal OrElse Storage.ModrinthOffset < Storage.ModrinthTotal
+                Storage.Results.Count > PAGE_SIZE * (Page + 1) OrElse HasMoreRemote
             BtnPageRight.IsEnabled = IsRightEnabled
             BtnPageRight.Opacity = If(IsRightEnabled, 1, 0.2)
             '错误信息
@@ -238,9 +269,15 @@ Public Class PageResource
     ''' 将来源下拉框恢复为“设置 → 下载选项”中配置的默认社区来源。
     ''' </summary>
     Public Sub ApplyDefaultSourceFilter()
+        ConfigureSourceOptions()
         If ComboSearchSource Is Nothing OrElse ComboSearchSource.Items.Count = 0 Then Return
         ComboSearchSource.IsEnabled = True
+        If PageType = ResourceTypes.Map Then
+            ComboSearchSource.SelectedIndex = 0
+            Return
+        End If
         Dim TargetTag As Integer = Settings.Get(Of Integer)("ToolDownloadResourceSource")
+        If PageType = ResourceTypes.Plugin AndAlso TargetTag = 3 Then TargetTag = CInt(ResourcePlatforms.AllPlugins)
         For Each Item As MyComboBoxItem In ComboSearchSource.Items
             If Val(Item.Tag) = TargetTag Then
                 ComboSearchSource.SelectedItem = Item
@@ -253,7 +290,7 @@ Public Class PageResource
     ''' 在更改全局默认社区来源设置后，同步更新已打开的资源搜索分页。
     ''' </summary>
     Public Shared Sub RefreshAllDefaultSources()
-        For Each PageObj In New PageResource() {FrmDownloadMod?.Content, FrmDownloadPack?.Content, FrmDownloadDataPack?.Content, FrmDownloadResourcePack?.Content, FrmDownloadShader?.Content}
+        For Each PageObj In New PageResource() {FrmDownloadMod?.Content, FrmDownloadPack?.Content, FrmDownloadDataPack?.Content, FrmDownloadResourcePack?.Content, FrmDownloadShader?.Content, FrmDownloadPlugin?.Content, FrmDownloadMap?.Content}
             If PageObj Is Nothing Then Continue For
             Dim OldTag = Val(PageObj.ComboSearchSource.SelectedItem?.Tag)
             PageObj.ApplyDefaultSourceFilter()

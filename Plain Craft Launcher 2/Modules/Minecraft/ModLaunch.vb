@@ -213,7 +213,10 @@ Public Module ModLaunch
             ex.ThrowIfCanceled()
             Dim CurrentEx = ex
 NextInner:
-            If CurrentEx.Message.StartsWithF("$") Then
+            If IsMsAuthClientRejectedException(CurrentEx) Then
+                PromptConfigureMsAuthFallback(CurrentEx.Message.TrimStart("$"c))
+                Throw
+            ElseIf CurrentEx.Message.StartsWithF("$") Then
                 '若有以 $ 开头的错误信息，则以此为准显示提示
                 MyMsgBox(CurrentEx.Message.TrimStart("$"), If(IsSavingBatch, "导出启动脚本失败", "启动失败"))
                 Throw
@@ -342,6 +345,25 @@ NextInner:
             Return obj IsNot Nothing AndAlso obj.GetHashCode() = GetHashCode()
         End Function
     End Class
+    Public Class McLoginMs
+        Inherits McLoginData
+        ''' <summary>
+        ''' 缓存的 OAuth Refresh Token。若没有则为空字符串。
+        ''' </summary>
+        Public OAuthRefreshToken As String = ""
+        Public AccessToken As String = ""
+        Public Uuid As String = ""
+        Public UserName As String = ""
+        Public ProfileJson As String = ""
+
+        Public Sub New()
+            Type = McLoginType.Ms
+        End Sub
+        Public Overrides Function GetHashCode() As Integer
+            '不能使用全部信息，这俩就足以在登录输入时确保是同一个用户了
+            Return (OAuthRefreshToken & UserName).GetStableHashCode() Mod Integer.MaxValue
+        End Function
+    End Class
     Public Class McLoginLegacy
         Inherits McLoginData
         ''' <summary>
@@ -413,19 +435,56 @@ NextInner:
     End Structure
 
     ''' <summary>
+    ''' 判断本地缓存的微软正版 Minecraft AccessToken 是否仍存在且在有效期内。
+    ''' </summary>
+    Friend Function HasUsableMsCachedToken() As Boolean
+        Try
+            Dim ExpiresAt As Long = Settings.Get(Of Long)("CacheMsV2Expires")
+            Return ExpiresAt > GetUnixTimestampUtc() AndAlso
+                   Not String.IsNullOrEmpty(Settings.Get(Of String)("CacheMsV2Access")) AndAlso
+                   Not String.IsNullOrEmpty(Settings.Get(Of String)("CacheMsV2Uuid")) AndAlso
+                   Not String.IsNullOrEmpty(Settings.Get(Of String)("CacheMsV2Name"))
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function HasCachedMsSession() As Boolean
+        Try
+            Return Settings.Get(Of String)("CacheMsV2Access") <> "" AndAlso
+                   Settings.Get(Of String)("CacheMsV2Uuid") <> "" AndAlso
+                   Settings.Get(Of String)("CacheMsV2Name") <> ""
+        Catch
+            Return False
+        End Try
+    End Function
+
+    ''' <summary>
     ''' 当前是否可以进行登录。若不可以则会返回错误原因。
     ''' </summary>
     Public Function McLoginAble() As String
-        If Settings.Get(Of McLoginType)("LoginType") = McLoginType.Auth Then
-            Return McLoginAble(McLoginInput())
-        End If
-        Return FrmLoginLegacy.IsVaild()
+        Select Case Settings.Get(Of McLoginType)("LoginType")
+            Case McLoginType.Ms
+                If HasCachedMsSession() Then Return ""
+                If FrmLoginMs Is Nothing Then Return "请在登录账号后再启动游戏！"
+                Return FrmLoginMs.IsVaild()
+            Case McLoginType.Auth
+                Return McLoginAble(McLoginInput())
+            Case McLoginType.Legacy
+                Return If(FrmLoginLegacy Is Nothing, "请在输入用户名后再启动游戏！", FrmLoginLegacy.IsVaild())
+            Case Else
+                Return "未知的登录方式"
+        End Select
     End Function
     ''' <summary>
     ''' 登录输入是否可以进行登录。若不可以则会返回错误原因。
     ''' </summary>
     Public Function McLoginAble(LoginData As McLoginData) As String
         If LoginData Is Nothing Then Return "未知的登录方式"
+        If LoginData.Type = McLoginType.Ms Then
+            If CType(LoginData, McLoginMs).AccessToken <> "" AndAlso CType(LoginData, McLoginMs).Uuid <> "" Then Return ""
+            Return PageLoginMs.IsVaild(CType(LoginData, McLoginMs))
+        End If
         If LoginData.Type = McLoginType.Legacy Then Return PageLoginLegacy.IsVaild(LoginData)
         If LoginData.Type = McLoginType.Auth Then Return PageLoginAuth.IsVaild(CType(LoginData, McLoginServer))
         Return "未知的登录方式"
@@ -439,6 +498,12 @@ NextInner:
         Dim LoginType = Settings.Get(Of McLoginType)("LoginType")
         Try
             Select Case LoginType
+                Case McLoginType.Ms
+                    If HasCachedMsSession() Then
+                        LoginData = PageLoginMsSkin.GetLoginData()
+                    Else
+                        LoginData = PageLoginMs.GetLoginData()
+                    End If
                 Case McLoginType.Legacy
                     LoginData = PageLoginLegacy.GetLoginData()
                 Case McLoginType.Auth
@@ -461,6 +526,8 @@ NextInner:
         '获取对应加载器
         Dim Loader As LoaderBase
         Select Case Data.Input.Type
+            Case McLoginType.Ms
+                Loader = McLoginMsLoader
             Case McLoginType.Legacy
                 Loader = McLoginLegacyLoader
             Case McLoginType.Auth
@@ -479,8 +546,337 @@ NextInner:
 #Region "分方式登录模块"
 
     '各个登录方式的主对象与输入构造
+    Public McLoginMsLoader As New LoaderTask(Of McLoginMs, McLoginResult)("Loader Login Ms", AddressOf McLoginMsStart) With {.ReloadTimeout = 1}
     Public McLoginLegacyLoader As New LoaderTask(Of McLoginLegacy, McLoginResult)("Loader Login Legacy", AddressOf McLoginLegacyStart)
     Public McLoginAuthLoader As New LoaderTask(Of McLoginServer, McLoginResult)("Loader Login Auth", AddressOf McLoginAuthStart)
+
+    Private Sub McLoginMsStart(Data As LoaderTask(Of McLoginMs, McLoginResult))
+        Dim Input As McLoginMs = Data.Input
+        Dim LogUsername As String = Input.UserName
+        McLaunchLog("登录方式：正版（" & If(LogUsername = "", "尚未登录", LogUsername) & "）")
+        Data.Progress = 0.05
+        ShouldValidateSslCertificateOnLogin(Settings.Get(Of Boolean)("ToolDownloadCert"))
+
+        '检查是否已存在未过期的 AccessToken
+        Dim ExpiresAt As Long = Settings.Get(Of Long)("CacheMsV2Expires")
+        If Not Data.IsForceRestarting AndAlso
+           ExpiresAt > GetUnixTimestampUtc() AndAlso
+           Not String.IsNullOrEmpty(Settings.Get(Of String)("CacheMsV2Access")) AndAlso
+           Not String.IsNullOrEmpty(Settings.Get(Of String)("CacheMsV2Uuid")) AndAlso
+           Input.UserName = Settings.Get(Of String)("CacheMsV2Name") Then
+            Data.Output = New McLoginResult With {
+                .Name = Input.UserName, .Type = "Microsoft",
+                .AccessToken = Settings.Get(Of String)("CacheMsV2Access"),
+                .Uuid = Settings.Get(Of String)("CacheMsV2Uuid"),
+                .ClientToken = Settings.Get(Of String)("CacheMsV2Uuid"),
+                .ProfileJson = Settings.Get(Of String)("CacheMsV2ProfileJson")
+            }
+            McLaunchLog("无需重新认证，AccessToken 尚未过期")
+            GoTo SkipLogin
+        End If
+
+        '需要与微软 OAuth 通信：先确认 Client ID 可用
+        Dim EffectiveClientId As String = GetEffectiveMsOAuthClientId()
+        If String.IsNullOrEmpty(EffectiveClientId) Then
+            Throw New Exception("$当前未配置微软 OAuth Client ID，无法直接通过 PCL Linking 验证正版账号。请配置 Client ID，或改用官方 PCL 代为验证。")
+        End If
+
+        '步骤 1：微软 OAuth
+        Dim OAuthTokens As (OAuthAccessToken As String, OAuthRefreshToken As String)
+        If Input.OAuthRefreshToken = "" Then
+Relogin:
+            OAuthTokens = MsLoginStep1New(Data, EffectiveClientId)
+        Else
+            OAuthTokens = MsLoginStep1Refresh(Input.OAuthRefreshToken, EffectiveClientId)
+            If OAuthTokens.OAuthAccessToken = "Relogin" Then GoTo Relogin
+        End If
+        If Data.IsCanceled Then Throw New OperationCanceledException
+        Data.Progress = 0.25
+
+        '步骤 2~6：XBL -> XSTS -> Minecraft 服务 -> 正版持有检查 -> 档案信息
+        Dim OAuthAccessToken As String = OAuthTokens.OAuthAccessToken
+        Dim OAuthRefreshToken As String = OAuthTokens.OAuthRefreshToken
+        Dim XBLToken As String = MsLoginStep2(OAuthAccessToken)
+        Data.Progress = 0.4
+        If Data.IsCanceled Then Throw New OperationCanceledException
+        Dim Tokens = MsLoginStep3(XBLToken)
+        Data.Progress = 0.55
+        If Data.IsCanceled Then Throw New OperationCanceledException
+        Dim LoginResult = MsLoginStep4(Tokens)
+        ExpiresAt = LoginResult.ExpiresAt
+        Data.Progress = 0.7
+        If Data.IsCanceled Then Throw New OperationCanceledException
+        MsLoginStep5(LoginResult.AccessToken)
+        Data.Progress = 0.85
+        If Data.IsCanceled Then Throw New OperationCanceledException
+        Dim Result = MsLoginStep6(LoginResult.AccessToken)
+        Data.Progress = 0.98
+
+        '持久化缓存（全量通过 Settings DPAPI 加密储存）
+        Settings.Set("CacheMsV2OAuthRefresh", OAuthRefreshToken)
+        Settings.Set("CacheMsV2Access", LoginResult.AccessToken)
+        Settings.Set("CacheMsV2Uuid", Result.UUID)
+        Settings.Set("CacheMsV2Name", Result.UserName)
+        Settings.Set("CacheMsV2ProfileJson", Result.ProfileJson)
+        Settings.Set("CacheMsV2Expires", LoginResult.ExpiresAt)
+        Dim MsJson As JObject = Settings.Get(Of String)("LoginMsJson").DeserializeJson()
+        If Not String.IsNullOrEmpty(Input.UserName) Then MsJson.Remove(Input.UserName)
+        MsJson(Result.UserName) = OAuthRefreshToken
+        Settings.Set("LoginMsJson", MsJson.ToString(Newtonsoft.Json.Formatting.None))
+        Data.Output = New McLoginResult With {
+            .AccessToken = LoginResult.AccessToken,
+            .Name = Result.UserName,
+            .Uuid = Result.UUID,
+            .Type = "Microsoft",
+            .ClientToken = Result.UUID,
+            .ProfileJson = Result.ProfileJson
+        }
+SkipLogin:
+        McLaunchLog($"微软登录结束，AccessToken 将在 {DateTimeOffset.FromUnixTimeSeconds(ExpiresAt).LocalDateTime} 过期")
+        Settings.Set("HintBuy", True)
+    End Sub
+
+    '微软登录步骤 1，原始登录：获取 DeviceCode 并开启登录网页
+    Private Function MsLoginStep1New(Data As LoaderTask(Of McLoginMs, McLoginResult), ClientId As String) As (OAuthAccessToken As String, OAuthRefreshToken As String)
+Retry:
+        McLaunchLog("开始微软登录步骤 1/6（原始登录）")
+        Dim PrepareJson As JObject
+        Try
+            PrepareJson = NetRequestByClient("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", HttpMethod.Post,
+                Content:=$"client_id={StringUtils.FormUrlEscape(ClientId)}&tenant=/consumers&scope=XboxLive.signin%20offline_access",
+                ContentType:="application/x-www-form-urlencoded",
+                RequireJson:=True, MakeLog:=False).DeserializeJson()
+        Catch ex As HttpRequestCodeException
+            Dim Resp As String = If(ex.Response, "")
+            If Resp.Contains("invalid_client") OrElse Resp.Contains("unauthorized_client") OrElse Resp.Contains("AADSTS700016") OrElse Resp.Contains("AADSTS70002") Then
+                Throw New Exception("$当前微软 OAuth Client ID 无效或未开启公开客户端（Device Code）权限，请在「设置 → 启动」检查 Client ID，或改用官方 PCL 代为验证。", ex)
+            End If
+            Throw
+        End Try
+        PrepareJson("_client_id") = ClientId
+        McLaunchLog("网页登录地址：" & If(PrepareJson("verification_uri")?.ToString(), "https://www.microsoft.com/link"))
+
+        '弹窗等待用户在浏览器完成设备码授权
+        Dim Converter As New MyMsgBoxConverter With {.Content = PrepareJson, .ForceWait = True, .Type = MyMsgBoxType.Login}
+        WaitingMyMsgBox.Enqueue(Converter)
+        While Converter.Result Is Nothing
+            If Data.IsCanceled Then
+                Converter.IsExited = True
+                Converter.Result = New OperationCanceledException
+                Throw New OperationCanceledException
+            End If
+            Thread.Sleep(100)
+        End While
+        If TypeOf Converter.Result Is RestartException Then
+            If MyMsgBox($"请在登录时选择 {vbLQ}其他登录方法{vbRQ}，然后选择 {vbLQ}使用我的密码{vbRQ}。{vbCrLf}如果没有该选项，请选择 {vbLQ}设置密码{vbRQ}，设置完毕后再登录。",
+                "需要使用密码登录", "重新登录", "设置密码", "取消",
+                Button2Action:=Sub() OpenWebsite("https://account.live.com/password/Change")) = 1 Then
+                GoTo Retry
+            Else
+                Throw New OperationCanceledException
+            End If
+        ElseIf TypeOf Converter.Result Is Exception Then
+            Throw CType(Converter.Result, Exception)
+        Else
+            Dim Arr = CType(Converter.Result, String())
+            Return (Arr(0), Arr(1))
+        End If
+    End Function
+
+    '微软登录步骤 1，刷新登录：从 OAuth RefreshToken 获取 {OAuth AccessToken, OAuth RefreshToken}
+    Private Function MsLoginStep1Refresh(RefreshCode As String, ClientId As String) As (OAuthAccessToken As String, OAuthRefreshToken As String)
+        McLaunchLog("开始微软登录步骤 1/6（刷新登录）")
+        Dim Result As String
+        Try
+            Result = NetRequestByClient("https://login.live.com/oauth20_token.srf", HttpMethod.Post,
+                Content:=$"client_id={StringUtils.FormUrlEscape(ClientId)}&refresh_token={StringUtils.FormUrlEscape(RefreshCode)}&grant_type=refresh_token&scope=XboxLive.signin%20offline_access",
+                ContentType:="application/x-www-form-urlencoded",
+                Headers:={{"Accept-Language", "en-US,en;q=0.5"}, {"X-Requested-With", "XMLHttpRequest"}},
+                Timeout:=25000, MakeLog:=False, RequireJson:=True)
+        Catch ex As HttpRequestCodeException
+            Dim Response = If(ex.Response, "")
+            If Response.ContainsIgnoreCase("must sign in again") OrElse Response.ContainsIgnoreCase("password expired") OrElse
+               (Response.Contains("refresh_token") AndAlso Response.ContainsIgnoreCase("is not valid")) OrElse
+               Response.ContainsIgnoreCase("expired") Then
+                Return ("Relogin", "")
+            ElseIf Response.Contains("invalid_client") OrElse Response.Contains("unauthorized_client") OrElse Response.Contains("AADSTS700016") Then
+                Throw New Exception("$当前微软 OAuth Client ID 无效或无法刷新授权，请在「设置 → 启动」检查配置，或改用官方 PCL 代为验证。", ex)
+            ElseIf Response.Contains("Account security interrupt") Then
+                MyMsgBox("该账号由于安全问题无法登录，请前往微软账户页获取更多信息。", "登录失败", "我知道了", IsWarn:=True)
+                Throw New OperationCanceledException
+            ElseIf Response.Contains("service abuse") Then
+                MyMsgBox("非常抱歉，该账号已被微软封禁，无法登录。", "登录失败", "我知道了", IsWarn:=True)
+                Throw New OperationCanceledException
+            Else
+                Throw
+            End If
+        End Try
+        Dim ResultJson As JObject = Result.DeserializeJson()
+        Dim AccessToken As String = ResultJson("access_token").ToString
+        Dim NewRefreshToken As String = If(ResultJson("refresh_token")?.ToString(), RefreshCode)
+        Return (AccessToken, NewRefreshToken)
+    End Function
+
+    '微软登录步骤 2：从 OAuth AccessToken 获取 XBLToken
+    Private Function MsLoginStep2(AccessToken As String) As String
+        McLaunchLog("开始微软登录步骤 2/6")
+        Dim Payload As New JObject From {
+            {"Properties", New JObject From {
+                {"AuthMethod", "RPS"},
+                {"SiteName", "user.auth.xboxlive.com"},
+                {"RpsTicket", If(AccessToken.StartsWithF("d="), AccessToken, "d=" & AccessToken)}
+            }},
+            {"RelyingParty", "http://auth.xboxlive.com"},
+            {"TokenType", "JWT"}
+        }
+        Return NetRequestByClient("https://user.auth.xboxlive.com/user/authenticate", HttpMethod.Post,
+            Content:=Payload.ToString(Newtonsoft.Json.Formatting.None),
+            ContentType:="application/json", RequireJson:=True, MakeLog:=False).DeserializeJson()("Token").ToString
+    End Function
+
+    '微软登录步骤 3：从 XBLToken 获取 {XSTSToken, UHS}
+    Private Function MsLoginStep3(XBLToken As String) As (XSTSToken As String, UHS As String)
+        McLaunchLog("开始微软登录步骤 3/6")
+        Dim Payload As New JObject From {
+            {"Properties", New JObject From {
+                {"SandboxId", "RETAIL"},
+                {"UserTokens", New JArray(XBLToken)}
+            }},
+            {"RelyingParty", "rp://api.minecraftservices.com/"},
+            {"TokenType", "JWT"}
+        }
+        Dim Result As String
+        Try
+            Result = NetRequestByClient("https://xsts.auth.xboxlive.com/xsts/authorize", HttpMethod.Post,
+                Content:=Payload.ToString(Newtonsoft.Json.Formatting.None),
+                ContentType:="application/json", RequireJson:=True, MakeLog:=False)
+        Catch ex As HttpRequestCodeException
+            Dim Resp As String = If(ex.Response, "")
+            If Resp.Contains("2148916227") Then
+                MyMsgBox("该账号似乎已被微软封禁，无法登录。", "登录失败", "我知道了", IsWarn:=True)
+                Throw New OperationCanceledException
+            ElseIf Resp.Contains("2148916233") Then
+                If MyMsgBox("你尚未注册 Xbox 账户，请在注册后再登录。", "登录提示", "注册", "取消") = 1 Then
+                    OpenWebsite("https://signup.live.com/signup")
+                End If
+                Throw New OperationCanceledException
+            ElseIf Resp.Contains("2148916235") Then
+                MyMsgBox($"你的网络所在的国家或地区无法登录微软账号。{vbCrLf}请调整网络环境后再试。", "登录失败", "我知道了")
+                Throw New OperationCanceledException
+            ElseIf Resp.Contains("2148916238") Then
+                If MyMsgBox("该账号年龄不足，你需要先修改出生日期，然后才能登录。" & vbCrLf &
+                            "该账号目前填写的年龄是否在 13 岁以上？", "登录提示", "13 岁以上", "12 岁以下", "我不知道") = 1 Then
+                    OpenWebsite("https://account.live.com/editprof.aspx")
+                    MyMsgBox("请在打开的网页中修改账号的出生日期（至少改为 18 岁以上）。" & vbCrLf &
+                             "修改成功后等待一分钟，再回到 PCL Linking 即可正常登录！", "登录提示")
+                Else
+                    OpenWebsite("https://support.microsoft.com/zh-cn/account-billing/如何更改-microsoft-帐户上的出生日期-837badbc-999e-54d2-2617-d19206b9540a")
+                    MyMsgBox("请根据打开网页的说明，修改账号的出生日期（至少改为 18 岁以上）。" & vbCrLf &
+                             "修改成功后等待一分钟，再回到 PCL Linking 即可正常登录！", "登录提示")
+                End If
+                Throw New OperationCanceledException
+            Else
+                Throw
+            End If
+        End Try
+        Dim ResultJson As JObject = Result.DeserializeJson()
+        Return (
+            ResultJson("Token").ToString(),
+            ResultJson("DisplayClaims")("xui")(0)("uhs").ToString()
+        )
+    End Function
+
+    '微软登录步骤 4：从 {XSTSToken, UHS} 获取 {Minecraft AccessToken, 过期时间戳}
+    Private Function MsLoginStep4(Tokens As (XSTSToken As String, UHS As String)) As (AccessToken As String, ExpiresAt As Long)
+        McLaunchLog("开始微软登录步骤 4/6")
+        Dim Request As String = New JObject(New JProperty("identityToken", $"XBL3.0 x={Tokens.UHS};{Tokens.XSTSToken}")).ToString(0)
+        Dim Result As String
+        Try
+            Result = NetRequestByClient("https://api.minecraftservices.com/authentication/login_with_xbox", HttpMethod.Post,
+                Content:=Request, ContentType:="application/json", RequireJson:=True, MakeLog:=False)
+        Catch ex As HttpRequestCodeException
+            Dim Resp As String = If(ex.Response, "")
+            If ex.StatusCode = 429 Then
+                Logger.Warn(ex, "微软登录第 4 步汇报 429")
+                Throw New Exception("$登录尝试太过频繁，请等待几分钟后再试！")
+            ElseIf ex.StatusCode = HttpStatusCode.Forbidden Then
+                Logger.Warn(ex, "微软登录第 4 步汇报 403")
+                If Resp.Contains("Invalid app registration") OrElse Resp.Contains("unauthorized_client") OrElse Resp.Contains("invalid_client") Then
+                    Throw New Exception("$当前微软 OAuth Client ID 未获微软/Mojang Minecraft API 授权，无法直接签发正版令牌，请更换已过审的 Client ID 或改用官方 PCL 代为验证。")
+                End If
+                Throw New Exception("$当前请求被微软验证接口拒绝（403）。" & vbCrLf & "如果是使用的自定义 Client ID，请确认它已获 Mojang 审批；若网络节点受限，请更换网络环境后再试，也可改用官方 PCL 代为验证。")
+            ElseIf ex.StatusCode = HttpStatusCode.ServiceUnavailable Then
+                Logger.Warn(ex, "微软登录第 4 步汇报 503")
+                Throw New Exception("$Mojang 服务器暂时不可用，请稍后再试。")
+            ElseIf Resp.Contains("ACCOUNT_SUSPENDED") Then
+                MyMsgBox("该账号似乎已被微软封禁，无法登录。", "登录失败", "我知道了", IsWarn:=True)
+                Throw New OperationCanceledException
+            Else
+                Throw
+            End If
+        End Try
+        Dim ResultJson As JObject = Result.DeserializeJson()
+        Return (
+            ResultJson("access_token").ToString,
+            ResultJson("expires_in").ToObject(Of Long) + GetUnixTimestampUtc() - 3600 '提前 1 小时视作过期
+        )
+    End Function
+
+    '微软登录步骤 5：验证微软账号是否持有 MC，这也会刷新 XGP
+    Private Sub MsLoginStep5(AccessToken As String)
+        McLaunchLog("开始微软登录步骤 5/6")
+        Dim Result As String = NetRequestByClient("https://api.minecraftservices.com/entitlements/mcstore",
+            ContentType:="application/json", Headers:={{"Authorization", "Bearer " & AccessToken}},
+            RequireJson:=True, MakeLog:=False)
+        Try
+            Dim ResultJson As JObject = Result.DeserializeJson()
+            If Not (ResultJson.ContainsKey("items") AndAlso ResultJson("items").Any) Then
+                Select Case MyMsgBox("你尚未购买正版 Minecraft，或者 Xbox Game Pass 已到期。", "登录失败", "购买 Minecraft", "取消")
+                    Case 1
+                        OpenWebsite("https://www.xbox.com/zh-cn/games/store/minecraft-java-bedrock-edition-for-pc/9nxp44l49shj")
+                End Select
+                Throw New OperationCanceledException
+            End If
+        Catch ex As OperationCanceledException
+            Throw
+        Catch ex As Exception
+            Logger.Warn(ex, $"微软登录第 5 步异常")
+            Throw
+        End Try
+    End Sub
+
+    '微软登录步骤 6：从 Minecraft AccessToken 获取 {UUID, UserName, ProfileJson}
+    Private Function MsLoginStep6(AccessToken As String) As (UUID As String, UserName As String, ProfileJson As String)
+        McLaunchLog("开始微软登录步骤 6/6")
+        Dim Result As String
+        Try
+            Result = NetRequestByClient("https://api.minecraftservices.com/minecraft/profile",
+                ContentType:="application/json", Headers:={{"Authorization", "Bearer " & AccessToken}},
+                RequireJson:=True, MakeLog:=False)
+        Catch ex As HttpRequestCodeException
+            Select Case ex.StatusCode
+                Case 429
+                    Logger.Warn(ex, "微软登录第 6 步汇报 429")
+                    Throw New Exception("$登录尝试太过频繁，请等待几分钟后再试！")
+                Case HttpStatusCode.NotFound
+                    Logger.Warn(ex, "微软登录第 6 步汇报 404")
+                    RunInNewThread(
+                    Sub()
+                        Select Case MyMsgBox("请先创建 Minecraft 玩家档案，然后再重新登录。", "登录失败", "创建档案", "取消")
+                            Case 1
+                                OpenWebsite("https://www.minecraft.net/zh-hans/msaprofile/mygames/editprofile")
+                        End Select
+                    End Sub, "Login Failed: Create Profile")
+                    Throw New OperationCanceledException
+                Case Else
+                    Throw
+            End Select
+        End Try
+        Dim ResultJson As JObject = Result.DeserializeJson()
+        Dim UUID As String = ResultJson("id").ToString
+        Dim UserName As String = ResultJson("name").ToString
+        Return (UUID, UserName, Result)
+    End Function
 
     Private Sub McLoginAuthStart(Data As LoaderTask(Of McLoginServer, McLoginResult))
         Dim Input As McLoginServer = Data.Input
@@ -1969,13 +2365,17 @@ IgnoreCustomSkin:
         McLaunchLog("开始启动前 Mod 冲突与前置依赖静态预检...")
         Dim Report = ModPrecheck.RunInstanceModPrecheck(TargetInstance)
         If Loader.IsCanceled Then Return
-        If Not Report.HasIssues Then
-            McLaunchLog($"Mod 静态预检通过（已扫描 {Report.ScannedModCount} 个启用 Mod）")
+        If Not Report.HasBlockingIssues Then
+            If Report.HasIssues Then
+                McLaunchLog($"Mod 静态预检通过（含非阻塞参考提示，不影响启动）：{vbCrLf}{Report.FormatReport(TargetInstance, BlockingOnly:=False)}")
+            Else
+                McLaunchLog($"Mod 静态预检通过（已扫描 {Report.ScannedModCount} 个启用 Mod）")
+            End If
             Return
         End If
 
-        Dim Summary = Report.FormatReport(TargetInstance)
-        McLaunchLog($"启动前 Mod 静态预检发现潜在问题：{vbCrLf}{Summary}", LogLevel.Warn)
+        Dim Summary = Report.FormatReport(TargetInstance, BlockingOnly:=True)
+        McLaunchLog($"启动前 Mod 静态预检发现影响启动的问题：{vbCrLf}{Summary}", LogLevel.Warn)
         Dim ActionTaken As Integer = 0
         RunInUiWait(
         Sub()

@@ -1,7 +1,7 @@
 Public Class PageSetupLaunch
 
     Private Sub PageSetupLaunch_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
-        'PCL Linking：只保留离线登录，正版皮肤选项已移除，旧配置值 3 迁移为随机
+        '离线皮肤兼容迁移：未启用离线正版名皮肤项时，旧配置值 3 迁移为随机
         If Settings.Get(Of Integer)("LaunchSkinType") = 3 Then Settings.Set("LaunchSkinType", 0)
         '重复加载部分
         PanBack.ScrollToHome()
@@ -431,6 +431,40 @@ Public Class PageSetupLaunch
         sender.Text = NewText
         sender.CaretIndex = Math.Max(0, CaretIndex - 1)
     End Sub
+
+#Region "正版登录与官方 PCL 协同"
+
+    Private Sub TextMsOAuthClientId_TextChanged() Handles TextMsOAuthClientId.ValidatedTextChanged
+        If AniControlEnabled <> 0 Then Return
+        RunInUi(Sub() If FrmLoginMs IsNot Nothing Then FrmLoginMs.UpdateAuthModeUi())
+    End Sub
+
+    Private Sub BtnOfficialPclDetect_Click() Handles BtnOfficialPclDetect.Click
+        Dim Found = FindOfficialPclExecutables()
+        If Not Found.Any() Then
+            Hint("未在当前目录、桌面或下载目录中找到官方 PCL，请点击「浏览选择…」手动指定。", HintType.Blue)
+            Return
+        End If
+        Dim FirstExe As String = Found(0)
+        TextOfficialPclPath.Text = FirstExe
+        Settings.Set("ToolOfficialPclPath", FirstExe)
+        If FrmLoginMs IsNot Nothing Then FrmLoginMs.UpdateAuthModeUi()
+        Hint($"已定位到官方 PCL：{IO.Path.GetFileName(FirstExe)}", HintType.Green)
+    End Sub
+
+    Private Sub BtnOfficialPclBrowse_Click() Handles BtnOfficialPclBrowse.Click
+        Dim Selected = SelectOfficialPclExecutable()
+        If Not String.IsNullOrEmpty(Selected) Then
+            TextOfficialPclPath.Text = Selected
+            If FrmLoginMs IsNot Nothing Then FrmLoginMs.UpdateAuthModeUi()
+        End If
+    End Sub
+
+    Private Sub BtnOfficialPclOpen_Click() Handles BtnOfficialPclOpen.Click
+        TryLaunchOfficialPcl(AskConfirmIfAutoDetected:=True)
+    End Sub
+
+#End Region
 
 #End Region
 

@@ -859,6 +859,17 @@ Install:
         Hint(If(ChkPrelaunchModCheck.Checked, "已开启：启动该实例前将自动静态体检 Mod 冲突与依赖", "已关闭启动前静态体检"), HintType.Blue)
     End Sub
 
+    Private Sub BtnManagePrecheckSettings_Click() Handles BtnManagePrecheckSettings.Click
+        FrmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupLaunch)
+        FrmMain.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
+        Sub()
+            If FrmSetupLaunch?.CardModPrecheck IsNot Nothing Then
+                FrmSetupLaunch.CardModPrecheck.IsSwapped = False
+                FrmSetupLaunch.CardModPrecheck.BringIntoView()
+            End If
+        End Sub)
+    End Sub
+
     Private Sub BtnManageStaticPrecheck_Click() Handles BtnManageStaticPrecheck.Click
         Dim Instance = PageInstanceLeft.Instance
         If Instance Is Nothing Then Return
@@ -872,11 +883,19 @@ Install:
                 RunInUi(
                 Sub()
                     BtnManageStaticPrecheck.IsEnabled = True
-                    If Not Report.HasIssues Then
-                        MyMsgBox(Summary, "Mod 冲突与依赖体检通过", "太棒了")
+                    If Not Report.HasBlockingIssues Then
+                        If Not Report.HasIssues Then
+                            MyMsgBox(Summary, "Mod 冲突与依赖体检通过", "太棒了")
+                        Else
+                            Dim Choice = MyMsgBox(Summary, "Mod 体检完成（无启动阻塞项）", "复制体检报告", "关闭", IsWarn:=False)
+                            If Choice = 1 Then
+                                ClipboardSet(Summary, False)
+                                Hint("已复制体检报告到剪贴板！", HintType.Green)
+                            End If
+                        End If
                     ElseIf Report.AutoDisableCandidates.Any() Then
                         Dim Choice = MyMsgBox(Summary & vbCrLf & vbCrLf &
-                                              $"检测到 {Report.AutoDisableCandidates.Count} 个可自动处理的问题文件（重复/错放/纯服务端），是否直接禁用它们？",
+                                              $"检测到 {Report.AutoDisableCandidates.Count} 个可自动处理的问题文件（重复/加载器错放），是否直接禁用它们？",
                                               "Mod 冲突与依赖体检报告",
                                               "一键禁用冲突/错放 Mod", "复制体检报告", "关闭", IsWarn:=True)
                         If Choice = 1 Then

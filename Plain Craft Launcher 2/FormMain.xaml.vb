@@ -996,7 +996,8 @@ Public Class FormMain
         DownloadResourcePack = 5
         DownloadShader = 6
         DownloadPlugin = 7
-        DownloadPresets = 8
+        DownloadMap = 8
+        DownloadPresets = 9
         LinkMain = 0 'PCL Linking：联机页自身没有子页，仅用于页面切换接口
         '设置页的四个子页面，顺序与左侧导航一致
         SetupLaunch = 0

@@ -117,12 +117,15 @@ Public Class PageLaunchLeft
     ''' 切换至启动中页面。
     ''' </summary>
     Public Sub PageChangeToLaunching()
-        If Settings.Get(Of McLoginType)("LoginType") = McLoginType.Auth Then
-            Dim ServerName As String = If(McInstanceSelected IsNot Nothing, Settings.Get(Of String)("VersionServerAuthName", Instance:=McInstanceSelected), Settings.Get(Of String)("CacheAuthServerName")).Trim()
-            LabLaunchingMethod.Text = If(ServerName = "", "第三方登录", ServerName)
-        Else
-            LabLaunchingMethod.Text = "离线登录"
-        End If
+        Select Case Settings.Get(Of McLoginType)("LoginType")
+            Case McLoginType.Ms
+                LabLaunchingMethod.Text = "正版登录"
+            Case McLoginType.Auth
+                Dim ServerName As String = If(McInstanceSelected IsNot Nothing, Settings.Get(Of String)("VersionServerAuthName", Instance:=McInstanceSelected), Settings.Get(Of String)("CacheAuthServerName")).Trim()
+                LabLaunchingMethod.Text = If(ServerName = "", "第三方登录", ServerName)
+            Case Else
+                LabLaunchingMethod.Text = "离线登录"
+        End Select
         '初始化页面
         LabLaunchingName.Text = McInstanceSelected.Name
         LabLaunchingStage.Text = "初始化"
@@ -184,6 +187,8 @@ Public Class PageLaunchLeft
 
     Private Enum PageType
         None
+        Ms
+        MsSkin
         Legacy
         Auth
         AuthSkin
@@ -195,6 +200,12 @@ Public Class PageLaunchLeft
 
     Private Function PageGet(Type As PageType)
         Select Case Type
+            Case PageType.Ms
+                If IsNothing(FrmLoginMs) Then FrmLoginMs = New PageLoginMs
+                Return FrmLoginMs
+            Case PageType.MsSkin
+                If IsNothing(FrmLoginMsSkin) Then FrmLoginMsSkin = New PageLoginMsSkin
+                Return FrmLoginMsSkin
             Case PageType.Legacy
                 If IsNothing(FrmLoginLegacy) Then FrmLoginLegacy = New PageLoginLegacy
                 Return FrmLoginLegacy
@@ -264,42 +275,151 @@ Public Class PageLaunchLeft
     ''' 确认当前显示的子页面正确，并刷新该页面。
     ''' </summary>
     Public Sub RefreshPage(KeepInput As Boolean, Anim As Boolean)
-        Dim UseAuth As Boolean = McInstanceSelected IsNot Nothing AndAlso Settings.Get(Of Integer)("VersionServerLogin", Instance:=McInstanceSelected) = 3
         Dim TargetPage As PageType
-        If UseAuth Then
-            Settings.Set("LoginType", McLoginType.Auth)
-            Dim ServerUrl As String = Settings.Get(Of String)("VersionServerAuthServer", Instance:=McInstanceSelected).Trim().TrimEnd("/"c)
-            Dim ServerName As String = Settings.Get(Of String)("VersionServerAuthName", Instance:=McInstanceSelected).Trim()
-            Dim CachedServer As String = Settings.Get(Of String)("CacheAuthServerServer").Trim().TrimEnd("/"c)
-            Dim HasCachedSession As Boolean =
-                Settings.Get(Of String)("CacheAuthAccess") <> "" AndAlso
-                Settings.Get(Of String)("CacheAuthUuid") <> "" AndAlso
-                Settings.Get(Of String)("CacheAuthName") <> "" AndAlso
-                ServerUrl <> "" AndAlso
-                String.Equals(CachedServer, ServerUrl, StringComparison.OrdinalIgnoreCase)
-
-            PanTypeOne.Visibility = Visibility.Visible
-            PathTypeOne.Data = (New GeometryConverter).ConvertFromString(Logo.IconButtonUser)
-            LabTypeOne.Text = If(ServerName <> "", ServerName, "第三方登录")
-            TargetPage = If(HasCachedSession, PageType.AuthSkin, PageType.Auth)
+        Dim LoginPageType As Integer
+        If McInstanceSelected IsNot Nothing Then
+            LoginPageType = Settings.Get(Of Integer)("VersionServerLogin", Instance:=McInstanceSelected)
+            Settings.Set("LoginPageType", LoginPageType)
         Else
-            Settings.Set("LoginType", McLoginType.Legacy)
-            PanTypeOne.Visibility = Visibility.Visible
-            PathTypeOne.Data = (New GeometryConverter).ConvertFromString(Logo.IconButtonOffline)
-            LabTypeOne.Text = "离线登录"
-            TargetPage = PageType.Legacy
+            LoginPageType = Settings.Get(Of Integer)("LoginPageType")
         End If
+        Dim HasMsSession As Boolean =
+            Settings.Get(Of String)("CacheMsV2Access") <> "" AndAlso
+            Settings.Get(Of String)("CacheMsV2Uuid") <> "" AndAlso
+            Settings.Get(Of String)("CacheMsV2Name") <> ""
+
+        '初次进入页面时按持久化设置恢复「正版 | 离线」单选状态
+        If Not RadioLoginType0.Checked AndAlso Not RadioLoginType5.Checked Then
+            AniControlEnabled += 1
+            Try
+                If Settings.Get(Of McLoginType)("LoginType") = McLoginType.Ms Then
+                    RadioLoginType5.Checked = True
+                Else
+                    RadioLoginType0.Checked = True
+                End If
+            Finally
+                AniControlEnabled -= 1
+            End Try
+        End If
+
+        Select Case LoginPageType
+            Case 0 '正版或离线
+UnknownType:
+                If RadioLoginType5.Checked Then
+                    TargetPage = If(HasMsSession, PageType.MsSkin, PageType.Ms)
+                    Settings.Set("LoginType", McLoginType.Ms)
+                Else
+                    TargetPage = PageType.Legacy
+                    Settings.Set("LoginType", McLoginType.Legacy)
+                End If
+                PanType.Visibility = Visibility.Visible
+                PanTypeOne.Visibility = Visibility.Collapsed
+                RadioLoginType5.Visibility = Visibility.Visible
+                RadioLoginType0.Visibility = Visibility.Visible
+            Case 1 '仅正版
+                TargetPage = If(HasMsSession, PageType.MsSkin, PageType.Ms)
+                Settings.Set("LoginType", McLoginType.Ms)
+                PanType.Visibility = Visibility.Collapsed
+                PanTypeOne.Visibility = Visibility.Visible
+                PathTypeOne.Data = (New GeometryConverter).ConvertFromString(Logo.IconButtonShield)
+                LabTypeOne.Text = "正版登录"
+                RadioLoginType5.Visibility = Visibility.Visible
+                RadioLoginType0.Visibility = Visibility.Collapsed
+            Case 2 '仅离线
+                TargetPage = PageType.Legacy
+                Settings.Set("LoginType", McLoginType.Legacy)
+                PanType.Visibility = Visibility.Collapsed
+                PanTypeOne.Visibility = Visibility.Visible
+                PathTypeOne.Data = (New GeometryConverter).ConvertFromString(Logo.IconButtonOffline)
+                LabTypeOne.Text = "离线登录"
+            Case 3 '第三方外置登录（Authlib-Injector）
+                Settings.Set("LoginType", McLoginType.Auth)
+                Dim ServerUrl As String = Settings.Get(Of String)("VersionServerAuthServer", Instance:=McInstanceSelected).Trim().TrimEnd("/"c)
+                Dim ServerName As String = Settings.Get(Of String)("VersionServerAuthName", Instance:=McInstanceSelected).Trim()
+                Dim CachedServer As String = Settings.Get(Of String)("CacheAuthServerServer").Trim().TrimEnd("/"c)
+                Dim HasCachedSession As Boolean =
+                    Settings.Get(Of String)("CacheAuthAccess") <> "" AndAlso
+                    Settings.Get(Of String)("CacheAuthUuid") <> "" AndAlso
+                    Settings.Get(Of String)("CacheAuthName") <> "" AndAlso
+                    ServerUrl <> "" AndAlso
+                    String.Equals(CachedServer, ServerUrl, StringComparison.OrdinalIgnoreCase)
+
+                PanType.Visibility = Visibility.Collapsed
+                PanTypeOne.Visibility = Visibility.Visible
+                PathTypeOne.Data = (New GeometryConverter).ConvertFromString(Logo.IconButtonUser)
+                LabTypeOne.Text = If(ServerName <> "", ServerName, "第三方登录")
+                TargetPage = If(HasCachedSession, PageType.AuthSkin, PageType.Auth)
+            Case Else
+                Logger.Warn($"未知的登录页面：{LoginPageType}")
+                GoTo UnknownType
+        End Select
+
         '刷新页面
         If PageCurrent = TargetPage Then
             PageGet(TargetPage).Reload(KeepInput)
-            Return
+        Else
+            PageChange(TargetPage, Anim).Reload(KeepInput)
         End If
-        PageChange(TargetPage, Anim).Reload(KeepInput)
+        Dim ActiveRadio As MyRadioButton = TryCast(FindName("RadioLoginType" & CInt(Settings.Get(Of McLoginType)("LoginType"))), MyRadioButton)
+        If ActiveRadio IsNot Nothing AndAlso Not ActiveRadio.Checked Then
+            AniControlEnabled += 1
+            Try
+                ActiveRadio.Checked = True
+            Finally
+                AniControlEnabled -= 1
+            End Try
+        End If
+    End Sub
+    Private Sub RadioLoginType_Change(sender As Object, raiseByMouse As Boolean) Handles RadioLoginType0.Check, RadioLoginType5.Check
+        If AniControlEnabled = 0 AndAlso raiseByMouse Then RefreshPage(True, True)
     End Sub
 
 #End Region
 
 #Region "皮肤"
+
+    '微软正版皮肤
+    Public Shared SkinMs As New LoaderTask(Of (String, String), String)("Loader Skin Ms", AddressOf SkinMsLoad, AddressOf SkinMsInput, ThreadPriority.AboveNormal)
+    Private Shared Function SkinMsInput() As (String, String)
+        Return (Settings.Get(Of String)("CacheMsV2Name"), Settings.Get(Of String)("CacheMsV2Uuid"))
+    End Function
+    Private Shared Sub SkinMsLoad(Data As LoaderTask(Of (String, String), String))
+        RunInUi(Sub() If FrmLoginMsSkin IsNot Nothing AndAlso FrmLoginMsSkin.Skin IsNot Nothing Then FrmLoginMsSkin.Skin.Clear())
+        Dim UserName As String = Data.Input.Item1
+        Dim Uuid As String = Data.Input.Item2
+        If UserName = "" OrElse Uuid = "" Then
+            Data.Output = PathImage & "Skins/" & McSkinSex(McLoginLegacyUuid(UserName)) & ".png"
+            Logger.Info("获取微软正版皮肤跳过：玩家档案为空")
+            GoTo Finish
+        End If
+        Try
+            Dim Result As String = McSkinGetAddress(Uuid, "Ms")
+            If Data.IsCanceled Then Throw New OperationCanceledException("当前任务已取消：" & UserName)
+            Result = McSkinDownload(Result)
+            If Data.IsCanceled Then Throw New OperationCanceledException("当前任务已取消：" & UserName)
+            Data.Output = Result
+        Catch ex As Exception
+            If ex.IsCanceled Then
+                Data.Output = ""
+                Return
+            ElseIf ex.GetDisplay(False).Contains("(429)") Then
+                Data.Output = PathImage & "Skins/" & McSkinSex(McLoginLegacyUuid(UserName)) & ".png"
+                Logger.Error($"获取正版皮肤失败（{UserName}）：获取皮肤太过频繁，请 5 分钟后再试！", LogBehavior.Toast)
+            ElseIf ex.GetDisplay(False).Contains("未设置自定义皮肤") Then
+                Data.Output = PathImage & "Skins/" & McSkinSex(McLoginLegacyUuid(UserName)) & ".png"
+                Logger.Info("用户未设置自定义皮肤，跳过皮肤加载")
+            Else
+                Data.Output = PathImage & "Skins/" & McSkinSex(McLoginLegacyUuid(UserName)) & ".png"
+                Logger.Error(ex, $"获取微软正版皮肤失败（{UserName}）", LogBehavior.Toast)
+            End If
+        End Try
+Finish:
+        If FrmLoginMsSkin IsNot Nothing Then
+            RunInUi(AddressOf FrmLoginMsSkin.Skin.Load)
+        ElseIf Not Data.IsCanceled Then
+            Data.Input = Nothing
+        End If
+    End Sub
 
     '离线皮肤
     Public Shared SkinLegacy As New LoaderTask(Of (String, String), String)("Loader Skin Legacy", AddressOf SkinLegacyLoad, AddressOf SkinLegacyInput, ThreadPriority.AboveNormal)
@@ -386,7 +506,7 @@ UseDefault:
 
     '全部皮肤加载器
     '需要放在其中元素的后面，否则会因为它提前被加载而莫名其妙变成 Nothing
-    Public Shared SkinLoaders As New List(Of LoaderTask(Of (String, String), String)) From {SkinLegacy, SkinAuth}
+    Public Shared SkinLoaders As New List(Of LoaderTask(Of (String, String), String)) From {SkinLegacy, SkinMs, SkinAuth}
 
 #End Region
 
@@ -412,6 +532,16 @@ UseDefault:
         End If
         '实际的启动
         If BtnLaunch.Text = "启动游戏" Then
+            If Settings.Get(Of McLoginType)("LoginType") = McLoginType.Ms AndAlso Not HasUsableMsCachedToken() Then
+                Dim SelectedInput = PageLoginMs.GetLoginData()
+                If Not HasEffectiveMsOAuthClientId() Then
+                    PromptConfigureMsAuthFallback("当前尚未完成正版验证且未配置微软 OAuth Client ID，PCL Linking 无法直接向微软发起登录。")
+                    Return
+                ElseIf SelectedInput Is Nothing OrElse String.IsNullOrEmpty(SelectedInput.OAuthRefreshToken) Then
+                    Hint("请先在上方正版登录区选择已保存的账号，或点击「登录」按钮完成微软认证！", HintType.Blue)
+                    Return
+                End If
+            End If
             McLaunchStart()
         ElseIf BtnLaunch.Text = "下载游戏" Then
             FrmMain.PageChange(FormMain.PageType.Download, FormMain.PageSubType.DownloadInstall)

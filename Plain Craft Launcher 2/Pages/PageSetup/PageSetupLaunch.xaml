@@ -196,6 +196,37 @@
                     </Grid>
                 </StackPanel>
             </local:MyCard>
+            <local:MyCard x:Name="CardMsAuth" Margin="0,0,0,15" Title="正版登录与官方 PCL 协同" CanSwap="True" IsSwapped="True">
+                <Grid Margin="25,40,25,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="28" />
+                        <RowDefinition Height="9" />
+                        <RowDefinition Height="28" />
+                        <RowDefinition Height="9" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="微软 Client ID" Margin="0,0,25,0" />
+                    <local:MyTextBox x:Name="TextMsOAuthClientId" local:SettingService.Key="ToolMsOAuthClientId" Grid.Row="0" Grid.Column="1"
+                                     HintText="可选：填写通过 Mojang 审核的 Azure 应用 Client ID（留空时读取环境变量 PCL_MS_CLIENT_ID）" MaxLength="128"
+                                     ToolTip="用于让 PCL Linking 直接执行微软设备码 OAuth 6 步正版验证与续期，以 DPAPI 加密保存。&#xa;注意：普通未获 Mojang 审批的 Azure 应用 ID 在兑换 Minecraft 令牌时会返回 403；若无可用 Client ID，请配置下方的官方 PCL 协同路径。" />
+                    <TextBlock Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Left" Text="官方 PCL 路径" Margin="0,0,25,0" />
+                    <local:MyTextBox x:Name="TextOfficialPclPath" local:SettingService.Key="ToolOfficialPclPath" Grid.Row="2" Grid.Column="1"
+                                     HintText="可选：本地官方 PCL.exe / Plain Craft Launcher 2.exe 路径，留空将尝试自动识别" MaxLength="512"
+                                     ToolTip="当 PCL Linking 无法直接向微软发起验证时，可一键打开此处指定的官方 PCL 代为完成正版登录与游戏启动。&#xa;官方 PCL 启动后，PCL Linking 仍可保持运行提供 EasyTier 联机、好友加密聊天与百宝箱等功能。" />
+                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,2,0,2">
+                        <local:MyButton x:Name="BtnOfficialPclDetect" Text="自动查找" Height="28" Padding="12,0" Margin="0,0,10,0" />
+                        <local:MyButton x:Name="BtnOfficialPclBrowse" Text="浏览选择…" Height="28" Padding="12,0" Margin="0,0,10,0" />
+                        <local:MyButton x:Name="BtnOfficialPclOpen" Text="打开官方 PCL" Height="28" Padding="12,0" ColorType="Highlight" />
+                    </StackPanel>
+                    <local:MyHint Grid.Row="5" Grid.ColumnSpan="2" Margin="0,12,0,2" Theme="Blue"
+                                  Text="说明：若系统根证书异常导致直连正版验证报错 SSL/TLS，可在下方「下载选项」中按需勾选「关闭 SSL 证书校验」。" />
+                </Grid>
+            </local:MyCard>
             <local:MyCard x:Name="CardDownloadSource" Margin="0,0,0,15" Title="下载选项" IsSwapped="True" CanSwap="True">
                 <Grid Margin="25,40,25,15">
                     <Grid.ColumnDefinitions>
@@ -281,6 +312,30 @@
                                   Text="如果感觉搜索 Mod / 整合包速度较慢，可以将「默认社区资源」设为「仅 Modrinth」，需要时再在下载页面顶部切换来源。" />
                 </Grid>
             </local:MyCard>
+            <local:MyCard x:Name="CardModPrecheck" Margin="0,0,0,15" Title="Mod 启动预检与报错选项" IsSwapped="True" CanSwap="True">
+                <StackPanel Margin="25,40,25,15" HorizontalAlignment="Left">
+                    <local:MyCheckBox Height="28" Text="拦截重复 Mod ID（多份并存会导致崩溃）"
+                                      local:SettingService.Key="PrecheckWarnDuplicate"
+                                      ToolTip="同一实例内出现多个相同 ModId 的启用文件时，启动前弹窗警告并支持一键禁用重复副本。" />
+                    <local:MyCheckBox Height="28" Text="拦截加载器错放（如 Fabric 放进 Forge / NeoForge）"
+                                      local:SettingService.Key="PrecheckWarnLoader"
+                                      ToolTip="检测到与当前实例加载器不兼容的 Mod（未安装 Sinytra Connector 时的跨加载器文件）时，启动前弹窗提醒。" />
+                    <local:MyCheckBox Height="28" Text="拦截缺失必需前置依赖 Mod"
+                                      local:SettingService.Key="PrecheckWarnMissingDep"
+                                      ToolTip="当启用 Mod 声明了必需的前置库但当前未安装时，启动前弹窗提示补装。" />
+                    <local:MyCheckBox Height="28" Text="拦截 MC 游戏版本不兼容"
+                                      local:SettingService.Key="PrecheckWarnMcVersion"
+                                      ToolTip="当 Mod 声明支持的游戏版本区间不包含当前实例版本时，启动前弹窗提示。" />
+                    <local:MyCheckBox Height="28" Text="拦截 Mod 声明的冲突 / 不兼容（breaks / incompatible）"
+                                      local:SettingService.Key="PrecheckWarnBreaks"
+                                      ToolTip="默认关闭，防止因 Mod 作者过严或未及时更新的兼容声明引发误报弹窗。" />
+                    <local:MyCheckBox Height="28" Text="拦截纯服务端 Mod 错放进客户端（environment=server）"
+                                      local:SettingService.Key="PrecheckWarnServerOnly"
+                                      ToolTip="默认关闭。绝大多数 Mod 加载器在客户端启动时会自动跳过仅服务端 Mod。" />
+                    <local:MyHint Margin="0,8,0,2" Theme="Blue"
+                                  Text="取消勾选的项目不会在启动前弹窗拦截，但仍可在实例「Mod 管理 → 冲突与依赖体检」的参考提示中查看。" />
+                </StackPanel>
+            </local:MyCard>
             <local:MyCard Margin="0,0,0,15" Title="高级选项" IsSwapped="True" CanSwap="True">
                 <Grid Margin="25,40,25,15">
                     <Grid.ColumnDefinitions>
@@ -357,7 +412,7 @@
                 x:Name="BtnSwitch" Text="版本独立设置"
                 LogoScale="0.9" Logo="M73 584L920 584 608 896C579 925 579 972 608 1001 637 1030 683 1030 712 1001L1149 565C1164 550 1170 531 1170 511 1170 492 1164 472 1149 457L712 21C683-7 637-7 608 21 579 50 579 97 608 126L920 438 73 438C33 438 0 471 0 511 0 551 33 584 73 584Z" />
             <TextBlock x:Name="LabVersion" HorizontalAlignment="Center" Margin="0,0,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.0 · 基于 PCL 2.14.0.0 开源版二次开发" />
         </StackPanel>
     </local:MyScrollViewer>
 </local:MyPageRight>

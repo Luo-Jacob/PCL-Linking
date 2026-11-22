@@ -21,10 +21,19 @@ Public Class ResourceSearcher
         ''' </summary>
         Public ReadOnly Property CanContinue As Boolean
             Get
-                If Tag.StartsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.CurseForge) Then Storage.CurseForgeTotal = 0
-                If Tag.EndsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.Modrinth) Then Storage.ModrinthTotal = 0
-                If Storage.CurseForgeTotal = -1 OrElse Storage.ModrinthTotal = -1 Then Return True
-                Return Storage.CurseForgeOffset < Storage.CurseForgeTotal OrElse Storage.ModrinthOffset < Storage.ModrinthTotal
+                If Tag.StartsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.CurseForge) OrElse
+                   (Type = ResourceTypes.Plugin AndAlso PluginLoaders = "velocity" AndAlso Sources <> ResourcePlatforms.CurseForge) Then Storage.CurseForgeTotal = 0
+                If Type = ResourceTypes.Map OrElse Tag.EndsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.Modrinth) Then Storage.ModrinthTotal = 0
+                If Type <> ResourceTypes.Plugin OrElse Not Sources.HasFlagF(ResourcePlatforms.Hangar) OrElse
+                   (Tag <> "" AndAlso GetHangarCategory(Tag) = "" AndAlso Sources <> ResourcePlatforms.Hangar) Then Storage.HangarTotal = 0
+                If Type <> ResourceTypes.Plugin OrElse Not Sources.HasFlagF(ResourcePlatforms.SpigotMC) OrElse
+                   (PluginLoaders = "velocity" AndAlso Sources <> ResourcePlatforms.SpigotMC) OrElse
+                   (Tag <> "" AndAlso GetSpigetCategoryId(Tag) = "" AndAlso Sources <> ResourcePlatforms.SpigotMC) Then Storage.SpigotHasMore = False
+                If Sources.HasFlagF(ResourcePlatforms.CurseForge) AndAlso (Storage.CurseForgeTotal = -1 OrElse Storage.CurseForgeOffset < Storage.CurseForgeTotal) Then Return True
+                If Type <> ResourceTypes.Map AndAlso Sources.HasFlagF(ResourcePlatforms.Modrinth) AndAlso (Storage.ModrinthTotal = -1 OrElse Storage.ModrinthOffset < Storage.ModrinthTotal) Then Return True
+                If Type = ResourceTypes.Plugin AndAlso Sources.HasFlagF(ResourcePlatforms.Hangar) AndAlso (Storage.HangarTotal = -1 OrElse Storage.HangarOffset < Storage.HangarTotal) Then Return True
+                If Type = ResourceTypes.Plugin AndAlso Sources.HasFlagF(ResourcePlatforms.SpigotMC) AndAlso Storage.SpigotHasMore Then Return True
+                Return False
             End Get
         End Property
 
@@ -88,9 +97,11 @@ Public Class ResourceSearcher
                     Address += "&classId=12"
                 Case ResourceTypes.Plugin
                     Address += "&classId=5"
+                Case ResourceTypes.Map
+                    Address += "&classId=17"
             End Select
             If Tag <> "" Then Address += "&categoryId=" & Tag.BeforeFirst("/")
-            If Type <> ResourceTypes.Plugin AndAlso ModLoaders <> ModLoaders.None AndAlso Not IgnoreModLoaderFilter Then Address += "&modLoaderType=" & Resource.ToCurseForgeModLoaderType(ModLoaders.Flags.First)
+            If Type <> ResourceTypes.Plugin AndAlso Type <> ResourceTypes.Map AndAlso ModLoaders <> ModLoaders.None AndAlso Not IgnoreModLoaderFilter Then Address += "&modLoaderType=" & Resource.ToCurseForgeModLoaderType(ModLoaders.Flags.First)
             If Not String.IsNullOrEmpty(GameVersion) Then Address += "&gameVersion=" & GameVersion
             If Not String.IsNullOrEmpty(SearchText) Then Address += "&searchFilter=" & StringUtils.UrlEscape(SearchText)
             If Storage.CurseForgeOffset > 0 Then Address += "&index=" & Storage.CurseForgeOffset
@@ -113,8 +124,10 @@ Public Class ResourceSearcher
                     Facets.Add("[""categories:paper""]")
                 ElseIf PluginLoaders = "purpur" Then
                     Facets.Add("[""categories:purpur""]")
+                ElseIf PluginLoaders = "velocity" Then
+                    Facets.Add("[""categories:velocity""]")
                 Else
-                    Facets.Add("[""categories:paper"",""categories:purpur""]")
+                    Facets.Add("[""categories:paper"",""categories:purpur"",""categories:spigot"",""categories:velocity""]")
                 End If
             Else
                 Facets.Add($"[""project_type:{Type.ToString.Lower}""]")
@@ -126,6 +139,66 @@ Public Class ResourceSearcher
             If Not String.IsNullOrEmpty(GameVersion) Then Facets.Add($"[""versions:'{GameVersion}'""]")
             Address += "&facets=[" & String.Join(",", Facets) & "]"
             Return Address
+        End Function
+        Public Shared Function GetHangarCategory(Tag As String) As String
+            Select Case Tag
+                Case "115/management" : Return "admin_tools"
+                Case "123/economy" : Return "economy"
+                Case "124/world-management" : Return "world_management"
+                Case "129/game-mechanics" : Return "gameplay"
+                Case "117/chat" : Return "chat"
+                Case "127/utility" : Return "misc"
+                Case "125/optimization" : Return "admin_tools"
+                Case "126/minigame" : Return "games"
+                Case "132/adventure" : Return "role_playing"
+                Case "116/" : Return "protection"
+                Case "122/", "/library" : Return "dev_tools"
+                Case Else : Return ""
+            End Select
+        End Function
+        Public Shared Function GetSpigetCategoryId(Tag As String) As String
+            Select Case Tag
+                Case "115/management", "127/utility", "125/optimization" : Return "7"
+                Case "123/economy" : Return "23"
+                Case "124/world-management" : Return "18"
+                Case "129/game-mechanics" : Return "22"
+                Case "117/chat" : Return "14"
+                Case "126/minigame" : Return "24"
+                Case "132/adventure" : Return "17"
+                Case "134/" : Return "5"
+                Case "122/", "/library" : Return "26"
+                Case "130/" : Return "27"
+                Case Else : Return ""
+            End Select
+        End Function
+        ''' <summary>
+        ''' 获取对应的 Hangar (PaperMC) API 请求链接。
+        ''' </summary>
+        Public Function GetHangarAddress(SearchText As String) As String
+            Dim Address As String = $"https://hangar.papermc.io/api/v1/projects?limit={RESULT_PAGE_SIZE}&offset={Storage.HangarOffset}&sort=-downloads"
+            If Not String.IsNullOrEmpty(SearchText) Then Address += "&q=" & StringUtils.UrlEscape(SearchText)
+            If PluginLoaders = "paper" OrElse PluginLoaders = "purpur" Then
+                Address += "&platform=PAPER"
+            ElseIf PluginLoaders = "velocity" Then
+                Address += "&platform=VELOCITY"
+            End If
+            If Not String.IsNullOrEmpty(GameVersion) Then Address += "&version=" & StringUtils.UrlEscape(GameVersion)
+            Dim Cat = GetHangarCategory(Tag)
+            If Cat <> "" Then Address += "&category=" & Cat
+            Return Address
+        End Function
+        ''' <summary>
+        ''' 获取对应的 SpigotMC (Spiget v2) API 请求链接。
+        ''' </summary>
+        Public Function GetSpigetAddress(SearchText As String) As String
+            If Not String.IsNullOrEmpty(SearchText) Then
+                Return $"https://api.spiget.org/v2/search/resources/{StringUtils.UrlEscape(SearchText)}?size={RESULT_PAGE_SIZE}&page={Storage.SpigotPage}&sort=-downloads"
+            End If
+            Dim CatId = GetSpigetCategoryId(Tag)
+            If CatId <> "" Then
+                Return $"https://api.spiget.org/v2/categories/{CatId}/resources?size={RESULT_PAGE_SIZE}&page={Storage.SpigotPage}&sort=-downloads"
+            End If
+            Return $"https://api.spiget.org/v2/resources?size={RESULT_PAGE_SIZE}&page={Storage.SpigotPage}&sort=-downloads"
         End Function
 
         '相同判断
@@ -160,6 +233,12 @@ Public Class ResourceSearcher
         Public ModrinthOffset As Integer = 0
         Public ModrinthTotal As Integer = -1
 
+        Public HangarOffset As Integer = 0
+        Public HangarTotal As Integer = -1
+
+        Public SpigotPage As Integer = 1
+        Public SpigotHasMore As Boolean = True
+
         '结果列表
 
         ''' <summary>
@@ -176,6 +255,21 @@ Public Class ResourceSearcher
     ''' <summary>
     ''' 根据搜索请求获取一系列的工程列表。
     ''' </summary>
+    Private Shared Function IsHttp404Exception(Ex As Exception) As Boolean
+        Dim Cur = Ex
+        While Cur IsNot Nothing
+            Dim WebEx = TryCast(Cur, WebException)
+            Dim Resp = TryCast(WebEx?.Response, HttpWebResponse)
+            If Resp IsNot Nothing AndAlso Resp.StatusCode = HttpStatusCode.NotFound Then Return True
+            Cur = Cur.InnerException
+        End While
+        Dim Msg = Ex.ToString()
+        Return Msg.IndexOf("(404)", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+               Msg.IndexOf("404 Not Found", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+               Msg.IndexOf("Status Code: 404", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+               Msg.IndexOf("NotFound", StringComparison.OrdinalIgnoreCase) >= 0
+    End Function
+
     Public Shared Function GetLoader(InputDelegate As Func(Of SearchRequest)) As LoaderTask(Of SearchRequest, Integer)
         Return New LoaderTask(Of SearchRequest, Integer)("社区资源获取", AddressOf Run, InputDelegate) With {.ReloadTimeout = 60 * 1000}
     End Function
@@ -306,10 +400,12 @@ Public Class ResourceSearcher
 #End Region
 
         Dim RealResults As New List(Of ResourceProject)
+        Dim LoopCount As Integer = 0
 NextPage:
+        LoopCount += 1
         Dim RawResults As New List(Of ResourceProject)
 
-#Region "从 CurseForge 和 Modrinth 获取结果列表，存储于 RawResults"
+#Region "从 CurseForge、Modrinth、Hangar 与 SpigotMC 获取结果列表，存储于 RawResults"
 
         Dim WorkThreads As New List(Of Thread)
         Dim Errors As New ConcurrentBag(Of (Ex As Exception, Source As ResourcePlatforms))
@@ -333,7 +429,7 @@ NextPage:
                         Dim RequestResult As JObject = DlModRequest(CurseForgeUrl)
                         Dim ProjectList As New List(Of ResourceProject)
                         For Each JsonEntry As JObject In RequestResult("data")
-                            Dim Project As New ResourceProject(JsonEntry)
+                            Dim Project As New ResourceProject(JsonEntry, ResourcePlatforms.CurseForge)
                             If Request.Type = ResourceTypes.ResourcePack AndAlso Project.Tags.Contains("数据包") Then Continue For 'CurseForge 将一些数据包分类成了资源包
                             If Request.Type <> ResourceTypes.Any AndAlso Not Project.Types.HasFlagF(Request.Type) Then Continue For '过滤分区不匹配的搜索结果（#8265）
                             ProjectList.Add(Project)
@@ -353,7 +449,8 @@ NextPage:
             End If
 
             'Modrinth 搜索
-            If Request.Sources.HasFlagF(ResourcePlatforms.Modrinth) AndAlso
+            If Request.Type <> ResourceTypes.Map AndAlso
+               Request.Sources.HasFlagF(ResourcePlatforms.Modrinth) AndAlso
                Not (Storage.ModrinthTotal > -1 AndAlso Storage.ModrinthTotal <= Storage.ModrinthOffset) AndAlso '剩余的未显示的搜索结果不足
                (Not IsChineseSearch OrElse (IsChineseSearch AndAlso Not String.IsNullOrEmpty(ModrinthAltSearchText))) Then '如果是中文搜索，就只在有对应搜索关键词的时候才继续
                 WorkThreads.Add(RunInNewThread(
@@ -364,7 +461,7 @@ NextPage:
                         Dim RequestResult As JObject = DlModRequest(ModrinthUrl)
                         Dim ProjectList As New List(Of ResourceProject)
                         For Each JsonEntry As JObject In RequestResult("hits")
-                            ProjectList.Add(New ResourceProject(JsonEntry))
+                            ProjectList.Add(New ResourceProject(JsonEntry, ResourcePlatforms.Modrinth))
                         Next
                         '更新结果
                         ProjectList.ForEach(Sub(p) SearchResults.Add(p))
@@ -381,7 +478,8 @@ NextPage:
             End If
 
             'Modrinth 直接获取工程
-            If Request.Sources.HasFlagF(ResourcePlatforms.Modrinth) AndAlso
+            If Request.Type <> ResourceTypes.Map AndAlso
+               Request.Sources.HasFlagF(ResourcePlatforms.Modrinth) AndAlso
                Not (Storage.ModrinthTotal > -1 AndAlso Storage.ModrinthTotal <= Storage.ModrinthOffset) AndAlso '剩余的未显示的搜索结果不足
                ModrinthSlugs.Any Then '有直接获取的 Slug
                 WorkThreads.Add(RunInNewThread(
@@ -391,7 +489,7 @@ NextPage:
                         Logger.Info($"开始 Modrinth 直接获取：{ModrinthUrl}")
                         Dim ProjectList As New List(Of ResourceProject)
                         For Each JsonEntry As JObject In DlModRequest(ModrinthUrl)
-                            Dim Project As New ResourceProject(JsonEntry)
+                            Dim Project As New ResourceProject(JsonEntry, ResourcePlatforms.Modrinth)
                             '应用筛选
                             If Request.Type <> ResourceTypes.Any AndAlso Not Project.Types.HasFlagF(Request.Type) Then Continue For
                             If Not String.IsNullOrEmpty(Request.Tag) AndAlso
@@ -421,6 +519,82 @@ NextPage:
                     End Try
                     If Task.Progress < 0.75 Then Task.Progress += 0.25 '可能重复加载多页，所以不能直接给够
                 End Sub, "Modrinth Get"))
+            End If
+
+            'Hangar 搜索
+            If Request.Type = ResourceTypes.Plugin AndAlso
+               Request.Sources.HasFlagF(ResourcePlatforms.Hangar) AndAlso
+               Not (Storage.HangarTotal > -1 AndAlso Storage.HangarTotal <= Storage.HangarOffset) Then
+                WorkThreads.Add(RunInNewThread(
+                Sub()
+                    Try
+                        Dim HangarUrl As String = Request.GetHangarAddress(RawSearchText)
+                        Logger.Info($"开始 Hangar 搜索：{HangarUrl}")
+                        Dim RequestResult As JObject = DlModRequest(HangarUrl)
+                        Dim ResultArr = If(TryCast(RequestResult("result"), JArray), New JArray)
+                        Dim ProjectList As New List(Of ResourceProject)
+                        For Each JsonEntry As JObject In ResultArr
+                            ProjectList.Add(New ResourceProject(JsonEntry, ResourcePlatforms.Hangar))
+                        Next
+                        ProjectList.ForEach(Sub(p) SearchResults.Add(p))
+                        Storage.HangarOffset += ResultArr.Count
+                        If ResultArr.Count = 0 Then
+                            Storage.HangarTotal = Storage.HangarOffset
+                        Else
+                            Storage.HangarTotal = If(RequestResult("pagination")?("count") IsNot Nothing, RequestResult("pagination")("count").ToObject(Of Integer), Storage.HangarOffset)
+                        End If
+                        Logger.Info($"从 Hangar 搜索到了 {ProjectList.Count} 个工程（总计已获取 {Storage.HangarOffset} 个，共 {Storage.HangarTotal} 个）")
+                    Catch ex As Exception
+                        Logger.Warn(ex, "Hangar 搜索失败")
+                        Storage.HangarTotal = -1
+                        Errors.Add((ex, ResourcePlatforms.Hangar))
+                    End Try
+                    If Task.Progress < 0.75 Then Task.Progress += 0.25
+                End Sub, "Hangar Search"))
+            End If
+
+            'SpigotMC (Spiget v2) 搜索
+            If Request.Type = ResourceTypes.Plugin AndAlso
+               Request.Sources.HasFlagF(ResourcePlatforms.SpigotMC) AndAlso
+               Storage.SpigotHasMore Then
+                WorkThreads.Add(RunInNewThread(
+                Sub()
+                    Try
+                        Dim SpigetUrl As String = Request.GetSpigetAddress(RawSearchText)
+                        Logger.Info($"开始 SpigotMC 搜索：{SpigetUrl}")
+                        Dim JsonTok As JToken = Nothing
+                        For TryIdx As Integer = 1 To 2
+                            Try
+                                JsonTok = NetRequestByClient(SpigetUrl, Timeout:=15000, Encoding:=Encoding.UTF8, RequireJson:=True, MakeLog:=(TryIdx = 1)).DeserializeJson()
+                                Exit For
+                            Catch ex As Exception
+                                If IsHttp404Exception(ex) Then
+                                    Storage.SpigotHasMore = False
+                                    Logger.Info($"SpigotMC 无匹配结果（HTTP 404）：{SpigetUrl}")
+                                    Return
+                                End If
+                                If TryIdx = 2 Then Throw
+                                Thread.Sleep(350)
+                            End Try
+                        Next
+                        Dim ResultArr = If(TryCast(JsonTok, JArray), New JArray)
+                        Dim TargetDrop As Integer = If(Not String.IsNullOrEmpty(Request.GameVersion) AndAlso McVersion.IsStandardFormat(Request.GameVersion), McVersion.VersionToDrop(Request.GameVersion), -1)
+                        Dim ProjectList As New List(Of ResourceProject)
+                        For Each JsonEntry As JObject In ResultArr
+                            Dim Project As New ResourceProject(JsonEntry, ResourcePlatforms.SpigotMC)
+                            If TargetDrop > 0 AndAlso Project.Drops.Any() AndAlso Not Project.Drops.Contains(TargetDrop) Then Continue For
+                            ProjectList.Add(Project)
+                        Next
+                        ProjectList.ForEach(Sub(p) SearchResults.Add(p))
+                        Storage.SpigotPage += 1
+                        Storage.SpigotHasMore = (ResultArr.Count >= RESULT_PAGE_SIZE)
+                        Logger.Info($"从 SpigotMC 搜索到了 {ProjectList.Count} 个工程（已翻至第 {Storage.SpigotPage - 1} 页，是否还有更多：{Storage.SpigotHasMore}）")
+                    Catch ex As Exception
+                        Logger.Warn(ex, "SpigotMC 搜索失败")
+                        Errors.Add((ex, ResourcePlatforms.SpigotMC))
+                    End Try
+                    If Task.Progress < 0.75 Then Task.Progress += 0.25
+                End Sub, "SpigotMC Search"))
             End If
 
             '等待线程结束
@@ -453,11 +627,9 @@ NextPage:
                 End If
             ElseIf Errors.Any() Then
                 '有结果但是有错误
-                If Errors.Any(Function(e) e.Source = ResourcePlatforms.CurseForge) Then
-                    Storage.ErrorMessage = $"无法连接到 CurseForge，所以目前仅显示了来自 Modrinth 的内容，搜索结果可能不全。{vbCrLf}请稍后再试，或使用 VPN 改善网络环境。"
-                Else
-                    Storage.ErrorMessage = $"无法连接到 Modrinth，所以目前仅显示了来自 CurseForge 的内容，搜索结果可能不全。{vbCrLf}请稍后再试，或使用 VPN 改善网络环境。"
-                End If
+                Dim FailedNames = Errors.Select(Function(e) If(e.Source = ResourcePlatforms.SpigotMC, "SpigotMC", e.Source.ToString())).
+                    Distinct().Join("、")
+                Storage.ErrorMessage = $"无法连接到 {FailedNames}，目前仅显示其他可用来源的内容，搜索结果可能不全。{vbCrLf}请稍后再试，或检查网络环境。"
             End If
 
         Finally
@@ -470,8 +642,17 @@ NextPage:
 
 #Region "提取非重复项，存储于 RealResults"
 
-        '将 CurseForge 排在 Modrinth 的前面，避免加载结束顺序不同导致排名不同
-        RawResults = RawResults.Where(Function(x) x.Platform = ResourcePlatforms.CurseForge).Concat(RawResults.Where(Function(x) x.Platform <> ResourcePlatforms.CurseForge)).ToList
+        '按 CurseForge -> Modrinth -> Hangar -> SpigotMC 固定顺序排列，避免加载结束顺序不同导致排名与去重不同
+        Dim GetPlatformPriority =
+        Function(P As ResourcePlatforms) As Integer
+            Select Case P
+                Case ResourcePlatforms.CurseForge : Return 0
+                Case ResourcePlatforms.Modrinth : Return 1
+                Case ResourcePlatforms.Hangar : Return 2
+                Case Else : Return 3
+            End Select
+        End Function
+        RawResults = RawResults.OrderBy(Function(x) GetPlatformPriority(x.Platform)).ToList
         '去重
         RawResults = RawResults.Distinct(Function(a, b) a.IsLike(b)).ToList
         '已有内容去重
@@ -487,7 +668,7 @@ NextPage:
 
         If RealResults.Count + Storage.Results.Count < Request.TargetResultCount Then
             Logger.Info($"总结果数需求最少 {Request.TargetResultCount} 个，仅获得了 {RealResults.Count + Storage.Results.Count} 个")
-            If Request.CanContinue AndAlso Not Errors.Any Then '如果有某个源失败则不再重试，这时候重试可能导致无限循环
+            If Request.CanContinue AndAlso Not Errors.Any AndAlso LoopCount < 5 Then '如果有某个源失败则不再重试，且限制单次翻页深度
                 Logger.Info("将继续尝试加载下一页")
                 GoTo NextPage
             Else

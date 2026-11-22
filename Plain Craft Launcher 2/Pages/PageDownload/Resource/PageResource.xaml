@@ -56,9 +56,10 @@
                         <local:MyComboBoxItem Content="LiteLoader" Tag="2" />
                     </local:MyComboBox>
                     <local:MyComboBox x:Name="ComboPluginLoader" Visibility="Collapsed" Grid.Row="2" Grid.Column="2" Margin="10,0,0,0">
-                        <local:MyComboBoxItem Content="Paper / Purpur" IsSelected="True" Tag="" />
+                        <local:MyComboBoxItem Content="全部平台（Paper / Purpur / Spigot）" IsSelected="True" Tag="" />
                         <local:MyComboBoxItem Content="仅 Paper" Tag="paper" />
                         <local:MyComboBoxItem Content="仅 Purpur" Tag="purpur" />
+                        <local:MyComboBoxItem Content="仅 Velocity" Tag="velocity" />
                     </local:MyComboBox>
                     <TextBlock VerticalAlignment="Center" Grid.Column="4" Grid.Row="2" HorizontalAlignment="Left" Text="类型" Margin="0,0,18,0" />
                     <local:MyComboBox x:Name="ComboSearchTag" Grid.Column="5" Grid.Row="2" />

@@ -275,6 +275,10 @@ GroupDone:
         For Each Version In Versions
             If TargetResourceType = ResourceTypes.ModPack Then
                 Stack.Children.Add(Version.ToListItem(AddressOf Install_Click, AddressOf Save_Click, IsBadDisplay:=HasDuplicates))
+            ElseIf TargetResourceType = ResourceTypes.Map Then
+                Stack.Children.Add(Version.ToListItem(AddressOf InstallMap_Click, AddressOf Save_Click, IsBadDisplay:=HasDuplicates, ActionButtonToolTip:="另存为 .zip"))
+            ElseIf TargetResourceType = ResourceTypes.DataPack Then
+                Stack.Children.Add(Version.ToListItem(AddressOf InstallDataPack_Click, AddressOf Save_Click, IsBadDisplay:=HasDuplicates, ActionButtonToolTip:="另存为 .zip"))
             ElseIf HasServerDir AndAlso (Version.ResourceType.HasFlagF(ResourceTypes.Plugin) OrElse Version.ResourceType.HasFlagF(ResourceTypes.Mod)) Then
                 Stack.Children.Add(Version.ToListItem(AddressOf Save_Click, AddressOf InstallToServer_Click, IsBadDisplay:=HasDuplicates, ActionButtonToolTip:="装入已配置服务端"))
             Else
@@ -323,7 +327,7 @@ GroupDone:
         PanIntro.Children.Insert(0, ResourceItem)
 
         '决定按钮显示
-        BtnIntroWeb.Text = $"转到 {Project.Platform}"
+        BtnIntroWeb.Text = $"转到 {If(Project.Platform = ResourcePlatforms.SpigotMC, "SpigotMC", Project.Platform.ToString)}"
         BtnIntroWiki.Visibility = If(Project.WikiId = 0, Visibility.Collapsed, Visibility.Visible)
 
         AniControlEnabled -= 1
@@ -400,8 +404,267 @@ GroupDone:
         Return FileName
     End Function
 
+    ''' <summary>
+    ''' 检查压缩包/JAR 下载结果的有效性；若仅有外链下载则直接跳转浏览器。
+    ''' </summary>
+    Private Function TryRedirectExternalOnly(File As ResourceVersion) As Boolean
+        If String.IsNullOrEmpty(File?.ExternalOnlyUrl) Then Return False
+        RunInUi(
+        Sub()
+            OpenWebsite(File.ExternalOnlyUrl)
+            Hint("该资源需前往官方网页下载，已为你打开下载页面！", HintType.Blue)
+        End Sub)
+        Return True
+    End Function
+
+    Private Shared Sub TryDeleteFileQuietly(FilePath As String)
+        Try
+            If Not String.IsNullOrEmpty(FilePath) AndAlso IO.File.Exists(FilePath) Then IO.File.Delete(FilePath)
+        Catch
+        End Try
+    End Sub
+
+    Private Shared Sub ValidateDownloadedArchiveHeader(TargetPath As String)
+        If Not IO.File.Exists(TargetPath) OrElse New IO.FileInfo(TargetPath).Length < 512 Then
+            TryDeleteFileQuietly(TargetPath)
+            Throw New Exception("下载的文件不完整，可能是服务端限制或触发了站点校验。")
+        End If
+        Using Fs As New IO.FileStream(TargetPath, IO.FileMode.Open, IO.FileAccess.Read, IO.FileShare.ReadWrite)
+            Dim H0 = Fs.ReadByte()
+            Dim H1 = Fs.ReadByte()
+            If H0 <> &H50 OrElse H1 <> &H4B Then
+                Fs.Close()
+                TryDeleteFileQuietly(TargetPath)
+                Throw New Exception("下载的文件并非有效的 .jar / .zip 压缩包（可能触发了防机器人限制）。")
+            End If
+        End Using
+    End Sub
+
+    Private Shared Sub PromptExternalFallbackOnFailure(MyLoader As LoaderBase, FallbackUrl As String)
+        If MyLoader.State <> LoadState.Failed OrElse String.IsNullOrEmpty(FallbackUrl) Then Return
+        RunInUi(
+        Sub()
+            Dim Choice = MyMsgBox("无法直接自动下载该插件文件（可能受到防机器人校验或外链限制）。" & vbCrLf &
+                                  "你可以直接前往插件官方页面手动下载。",
+                                  "需前往网页下载", "打开下载网页", "取消", IsWarn:=True)
+            If Choice = 1 Then OpenWebsite(FallbackUrl)
+        End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' 从压缩包安全解压地图存档到目标 saves\SaveName 目录（含 ZipSlip 与解压总体积限制）。
+    ''' </summary>
+    Private Shared Sub ExtractMapZipSafely(ZipPath As String, DestSaveDir As String)
+        Const MAX_ENTRIES As Integer = 50000
+        Const MAX_TOTAL_BYTES As Long = 2L * 1024 * 1024 * 1024
+        Dim StagingDir As String = PathTemp & "Cache\MapExtract_" & GetUuid() & "\"
+        DirectoryUtils.Create(StagingDir)
+        Try
+            Dim StagingRoot As String = IO.Path.GetFullPath(StagingDir).TrimEnd("\"c) & "\"
+            Dim TotalBytes As Long = 0
+            Dim EntryCount As Integer = 0
+            Using Archive = IO.Compression.ZipFile.OpenRead(ZipPath)
+                Dim Buf(65535) As Byte
+                For Each Entry In Archive.Entries
+                    EntryCount += 1
+                    If EntryCount > MAX_ENTRIES Then Throw New Exception("地图压缩包内文件数量过多（超过 50,000），已中止解压")
+                    Dim RelPath = Entry.FullName.Replace("/"c, "\"c).TrimStart("\"c)
+                    If String.IsNullOrEmpty(RelPath) Then Continue For
+                    Dim FullDest = IO.Path.GetFullPath(IO.Path.Combine(StagingRoot, RelPath))
+                    If Not FullDest.StartsWith(StagingRoot, StringComparison.OrdinalIgnoreCase) Then
+                        Throw New Exception($"检测到不安全的压缩包路径（ZipSlip 防护拦截）：{Entry.FullName}")
+                    End If
+                    If Entry.FullName.EndsWith("/") OrElse Entry.FullName.EndsWith("\") Then
+                        IO.Directory.CreateDirectory(FullDest)
+                        Continue For
+                    End If
+                    Dim ParentDir = IO.Path.GetDirectoryName(FullDest)
+                    If Not String.IsNullOrEmpty(ParentDir) Then IO.Directory.CreateDirectory(ParentDir)
+                    Using Src = Entry.Open(), Dst As New IO.FileStream(FullDest, IO.FileMode.Create, IO.FileAccess.Write, IO.FileShare.None)
+                        Do
+                            Dim ReadLen = Src.Read(Buf, 0, Buf.Length)
+                            If ReadLen <= 0 Then Exit Do
+                            TotalBytes += ReadLen
+                            If TotalBytes > MAX_TOTAL_BYTES Then
+                                Throw New Exception("地图解压总体积超过 2 GB 上限，已中止解压")
+                            End If
+                            Dst.Write(Buf, 0, ReadLen)
+                        Loop
+                    End Using
+                Next
+            End Using
+
+            '定位包含 level.dat 的存档根目录
+            Dim SourceRoot As String = StagingRoot.TrimEnd("\"c)
+            If Not IO.File.Exists(IO.Path.Combine(SourceRoot, "level.dat")) Then
+                Dim LevelFiles = IO.Directory.GetFiles(SourceRoot, "level.dat", IO.SearchOption.AllDirectories)
+                If LevelFiles.Any() Then
+                    Dim Shallowest = LevelFiles.OrderBy(Function(p) p.Count(Function(c) c = "\"c)).First()
+                    SourceRoot = IO.Path.GetDirectoryName(Shallowest)
+                Else
+                    Dim TopFiles = IO.Directory.GetFiles(SourceRoot)
+                    Dim TopDirs = IO.Directory.GetDirectories(SourceRoot)
+                    If TopFiles.Length = 0 AndAlso TopDirs.Length = 1 Then SourceRoot = TopDirs(0)
+                End If
+            End If
+
+            If IO.Directory.Exists(DestSaveDir) Then Throw New Exception($"目标存档目录已存在：{DestSaveDir}")
+            MoveOrCopyDirectory(SourceRoot, DestSaveDir)
+        Finally
+            TryDeleteFileQuietly(ZipPath)
+            Try
+                If IO.Directory.Exists(StagingDir) Then IO.Directory.Delete(StagingDir, True)
+            Catch
+            End Try
+        End Try
+    End Sub
+
+    Private Shared Sub MoveOrCopyDirectory(SourceDir As String, DestDir As String)
+        Dim SrcRoot = IO.Path.GetPathRoot(IO.Path.GetFullPath(SourceDir))
+        Dim DstRoot = IO.Path.GetPathRoot(IO.Path.GetFullPath(DestDir))
+        Dim ParentDest = IO.Path.GetDirectoryName(IO.Path.GetFullPath(DestDir))
+        If Not String.IsNullOrEmpty(ParentDest) Then IO.Directory.CreateDirectory(ParentDest)
+        If String.Equals(SrcRoot, DstRoot, StringComparison.OrdinalIgnoreCase) Then
+            IO.Directory.Move(SourceDir, DestDir)
+            Return
+        End If
+        IO.Directory.CreateDirectory(DestDir)
+        For Each FilePath In IO.Directory.GetFiles(SourceDir, "*", IO.SearchOption.AllDirectories)
+            Dim Rel = FilePath.Substring(SourceDir.TrimEnd("\"c).Length).TrimStart("\"c)
+            Dim TargetFile = IO.Path.Combine(DestDir, Rel)
+            Dim TargetParent = IO.Path.GetDirectoryName(TargetFile)
+            If Not String.IsNullOrEmpty(TargetParent) Then IO.Directory.CreateDirectory(TargetParent)
+            IO.File.Copy(FilePath, TargetFile, True)
+        Next
+    End Sub
+
+    '地图安装（下载压缩包并安全解压到当前游戏存档目录 saves\）
+    Public Sub InstallMap_Click(sender As MyListItem, e As EventArgs)
+        Try
+            Dim File As ResourceVersion = sender.Tag
+            If TryRedirectExternalOnly(File) Then Return
+
+            Dim SavesDir As String = If(McInstanceSelected IsNot Nothing,
+                $"{McInstanceSelected.PathIndie}saves\",
+                $"{McFolderSelected}saves\")
+            DirectoryUtils.Create(SavesDir)
+
+            Dim DefaultName As String = Project.TranslatedName.Replace(".zip", "").Replace(".rar", "").
+                Replace("\", "＼").Replace("/", "／").Replace("|", "｜").Replace(":", "：").
+                Replace("<", "＜").Replace(">", "＞").Replace("*", "＊").Replace("?", "？").
+                Replace("""", "").Replace("： ", "：").Trim()
+            Dim Validate As New ValidateFolderName(SavesDir.TrimEnd("\"c))
+            If Validate.Validate(DefaultName) <> "" Then DefaultName = ""
+            Dim SaveName As String = MyMsgBoxInput("输入地图存档名称", "将自动下载并解压到游戏存档目录 (saves)", DefaultName, New Collection(Of Validate) From {Validate})
+            If String.IsNullOrEmpty(SaveName) Then Return
+
+            Dim TempZipPath As String = PathTemp & "Cache\MapDownload_" & GetUuid() & ".zip"
+            DirectoryUtils.Create(PathTemp & "Cache\")
+            Dim DestSaveDir As String = IO.Path.Combine(SavesDir, SaveName)
+            Dim LoaderName As String = $"地图安装：{SaveName} "
+            Dim Loaders As New List(Of LoaderBase) From {
+                New LoaderDownload("下载地图压缩包", {
+                    File.ToNetFile(TempZipPath, ResourceVersion.DownloadReason.Standalone)
+                }) With {.ProgressWeight = 8, .Block = True},
+                New LoaderTask(Of Integer, Integer)("安全校验并解压地图",
+                    Sub() ExtractMapZipSafely(TempZipPath, DestSaveDir)) With {.ProgressWeight = 2}
+            }
+            Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged =
+            Sub(MyLoader)
+                Select Case MyLoader.State
+                    Case LoadState.Finished
+                        Hint($"地图「{SaveName}」已安装到 saves 目录！", HintType.Green)
+                    Case LoadState.Failed
+                        Hint(MyLoader.Name & "失败：" & MyLoader.Error.GetDisplay(False), HintType.Red)
+                    Case LoadState.Canceled
+                        Hint(MyLoader.Name & "已取消！", HintType.Blue)
+                End Select
+            End Sub}
+            Loader.Start(1)
+            LoaderTaskbarAdd(Loader)
+            FrmMain.BtnExtraDownload.ShowRefresh()
+            FrmMain.BtnExtraDownload.Ribble()
+            Hint($"已开始下载并安装地图「{SaveName}」到 saves 目录", HintType.Blue)
+        Catch ex As Exception
+            Logger.Error(ex, "安装地图存档失败")
+        End Try
+    End Sub
+
+    '数据包一键装入指定世界存档的 datapacks\ 目录
+    Public Sub InstallDataPack_Click(sender As MyListItem, e As EventArgs)
+        Try
+            Dim File As ResourceVersion = sender.Tag
+            If TryRedirectExternalOnly(File) Then Return
+
+            Dim SavesDir As String = If(McInstanceSelected IsNot Nothing,
+                $"{McInstanceSelected.PathIndie}saves\",
+                $"{McFolderSelected}saves\")
+            Dim Worlds As New List(Of IO.DirectoryInfo)
+            If IO.Directory.Exists(SavesDir) Then
+                Dim AllDirs = New IO.DirectoryInfo(SavesDir).GetDirectories().OrderByDescending(Function(d) d.LastWriteTime).ToList()
+                Dim WithLevelDat = AllDirs.Where(Function(d) IO.File.Exists(IO.Path.Combine(d.FullName, "level.dat"))).ToList()
+                Worlds = If(WithLevelDat.Any(), WithLevelDat, AllDirs)
+            End If
+
+            If Not Worlds.Any() Then
+                If MyMsgBox("当前游戏实例的 saves 目录中尚无可用世界存档。" & vbCrLf & "是否改用「另存为」保存到其他位置？",
+                            "未找到存档", "另存为", "取消") = 1 Then
+                    Save_Click(sender, e)
+                End If
+                Return
+            End If
+
+            Dim Radios As New List(Of IMyRadio)
+            For Each W In Worlds
+                Radios.Add(New MyRadioBox With {.Text = $"{W.Name}（更新于 {W.LastWriteTime:MM-dd HH:mm}）"})
+            Next
+            Radios.Add(New MyRadioBox With {.Text = "另存为其他位置..."})
+
+            Dim SelectedIdx = MyMsgBoxSelect(Radios.ToArray(), "选择要装入数据包的世界存档：", "安装到该存档", "取消")
+            If SelectedIdx Is Nothing Then Return
+            If SelectedIdx.Value = Worlds.Count Then
+                Save_Click(sender, e)
+                Return
+            End If
+
+            Dim ChosenWorld = Worlds(SelectedIdx.Value)
+            Dim DatapacksDir = IO.Path.Combine(ChosenWorld.FullName, "datapacks")
+            IO.Directory.CreateDirectory(DatapacksDir)
+            Dim FileName = BuildFormattedFileName(File)
+            If Not FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) Then
+                FileName &= ".zip"
+            End If
+            Dim Target = IO.Path.Combine(DatapacksDir, FileName)
+            Dim LoaderName As String = $"数据包安装：{ChosenWorld.Name}\{FileName} "
+            Dim Loaders As New List(Of LoaderBase) From {
+                New LoaderDownload("下载数据包到存档", {
+                    File.ToNetFile(Target, ResourceVersion.DownloadReason.Standalone)
+                }) With {.ProgressWeight = 6, .Block = True}
+            }
+            Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged =
+            Sub(MyLoader)
+                Select Case MyLoader.State
+                    Case LoadState.Finished
+                        Hint($"数据包已安装到存档「{ChosenWorld.Name}」的 datapacks 目录！", HintType.Green)
+                    Case LoadState.Failed
+                        Hint(MyLoader.Name & "失败：" & MyLoader.Error.GetDisplay(False), HintType.Red)
+                    Case LoadState.Canceled
+                        Hint(MyLoader.Name & "已取消！", HintType.Blue)
+                End Select
+            End Sub}
+            Loader.Start(1)
+            LoaderTaskbarAdd(Loader)
+            FrmMain.BtnExtraDownload.ShowRefresh()
+            FrmMain.BtnExtraDownload.Ribble()
+            Hint($"已开始将 {FileName} 安装至存档「{ChosenWorld.Name}」", HintType.Blue)
+        Catch ex As Exception
+            Logger.Error(ex, "安装数据包到存档失败")
+        End Try
+    End Sub
+
     Public Sub InstallToServer_Click(sender As Object, e As EventArgs)
         Dim File As ResourceVersion = If(TypeOf sender Is MyListItem, sender, sender.Parent).Tag
+        If TryRedirectExternalOnly(File) Then Return
         Dim SavedServerDir = PageToolsServer.LoadSavedServerDir()
         If String.IsNullOrWhiteSpace(SavedServerDir) OrElse Not IO.Directory.Exists(SavedServerDir) Then
             Hint("请先在「工具 -> 服务器生成/管理」中设置有效的服务端目录！", HintType.Red)
@@ -420,11 +683,20 @@ GroupDone:
         Dim Target = IO.Path.Combine(TargetDir, FileName)
         Dim Desc = If(SubFolderName = "plugins", "服务端插件", "服务端 Mod ")
         Dim LoaderName As String = $"{Desc}装入服务端：{IO.Path.GetFileNameWithoutExtension(Target)} "
-        Dim Loaders As New List(Of LoaderBase)
-        Loaders.Add(New LoaderDownload("下载文件到服务端", {
-            File.ToNetFile(Target, If(TargetResourceType = ResourceTypes.Any, ResourceVersion.DownloadReason.Dependency, ResourceVersion.DownloadReason.Standalone))
-        }) With {.ProgressWeight = 6, .Block = True})
-        Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
+        Dim Loaders As New List(Of LoaderBase) From {
+            New LoaderDownload("下载文件到服务端", {
+                File.ToNetFile(Target, If(TargetResourceType = ResourceTypes.Any, ResourceVersion.DownloadReason.Dependency, ResourceVersion.DownloadReason.Standalone))
+            }) With {.ProgressWeight = 6, .Block = True}
+        }
+        If Not String.IsNullOrEmpty(File.ExternalFallbackUrl) Then
+            Loaders.Add(New LoaderTask(Of Integer, Integer)("校验安装包格式", Sub() ValidateDownloadedArchiveHeader(Target)) With {.ProgressWeight = 0.2})
+        End If
+        Dim FallbackUrl = File.ExternalFallbackUrl
+        Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged =
+        Sub(MyLoader)
+            LoaderStateChangedHintOnly(MyLoader)
+            PromptExternalFallbackOnFailure(MyLoader, FallbackUrl)
+        End Sub}
         Loader.Start(1)
         LoaderTaskbarAdd(Loader)
         FrmMain.BtnExtraDownload.ShowRefresh()
@@ -436,6 +708,7 @@ GroupDone:
     Public Shared CachedFolder As New Dictionary(Of ResourceTypes, String) '仅在本次缓存的下载文件夹
     Public Sub Save_Click(sender As Object, e As EventArgs)
         Dim File As ResourceVersion = If(TypeOf sender Is MyListItem, sender, sender.Parent).Tag
+        If TryRedirectExternalOnly(File) Then Return
         RunInNewThread(
         Sub()
             Try
@@ -447,6 +720,7 @@ GroupDone:
                     Case ResourceTypes.Shader : Desc = "光影包"
                     Case ResourceTypes.DataPack : Desc = "数据包"
                     Case ResourceTypes.Plugin : Desc = "服务端插件"
+                    Case ResourceTypes.Map : Desc = "地图"
                 End Select
                 '确认默认保存位置
                 Dim DefaultFolder As String = Nothing
@@ -470,6 +744,7 @@ GroupDone:
                         Case ResourceTypes.Mod : SubFolder = "mods\"
                         Case ResourceTypes.ResourcePack : SubFolder = "resourcepacks\"
                         Case ResourceTypes.Shader : SubFolder = "shaderpacks\"
+                        Case ResourceTypes.Map : SubFolder = "saves\"
                         Case ResourceTypes.DataPack : SubFolder = "" '导航到版本根目录
                     End Select
                     Dim IsInstanceSuitable As Func(Of McInstance, Boolean) = Nothing
@@ -576,10 +851,15 @@ GroupDone:
                     Loaders.Add(New LoaderDownload("下载文件", {
                         File.ToNetFile(Target, If(TargetResourceType = ResourceTypes.Any, ResourceVersion.DownloadReason.Dependency, ResourceVersion.DownloadReason.Standalone))
                     }) With {.ProgressWeight = 6, .Block = True})
+                    If Not String.IsNullOrEmpty(File.ExternalFallbackUrl) Then
+                        Loaders.Add(New LoaderTask(Of Integer, Integer)("校验安装包格式", Sub() ValidateDownloadedArchiveHeader(Target)) With {.ProgressWeight = 0.2})
+                    End If
+                    Dim FallbackUrl = File.ExternalFallbackUrl
                     '启动
                     Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged =
                     Sub(MyLoader)
                         LoaderStateChangedHintOnly(MyLoader)
+                        PromptExternalFallbackOnFailure(MyLoader, FallbackUrl)
                         If MyLoader.State = LoadState.Finished AndAlso File.ResourceType = ResourceTypes.ModPack Then OpenExplorer(Target)
                     End Sub}
                     Loader.Start(1)

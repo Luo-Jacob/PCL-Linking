@@ -217,6 +217,7 @@ EndHint:
         Text
         [Select]
         Input
+        Login
     End Enum
 
     ''' <summary>
@@ -334,6 +335,8 @@ EndHint:
                         FrmMain.PanMsg.Children.Add(New MyMsgSelect(TargetMsgBox))
                     Case MyMsgBoxType.Text
                         FrmMain.PanMsg.Children.Add(New MyMsgText(TargetMsgBox))
+                    Case MyMsgBoxType.Login
+                        FrmMain.PanMsg.Children.Add(New MyMsgLogin(TargetMsgBox))
                 End Select
             Else
                 '没有弹窗，没有等待的弹窗
@@ -375,6 +378,7 @@ EndHint:
     Public FrmDownloadShader As PageDownloadShader
     Public FrmDownloadResourcePack As PageDownloadResourcePack
     Public FrmDownloadPlugin As PageDownloadPlugin
+    Public FrmDownloadMap As PageDownloadMap
     Public FrmDownloadPresets As PageDownloadPresets
 
     '设置页面声明（左侧导航 + 全局设置 / 联机设置 / 个性化 / 关于 四个子页）
@@ -385,6 +389,8 @@ EndHint:
     Public FrmSetupAbout As PageSetupAbout
 
     '登录页面声明
+    Public FrmLoginMs As PageLoginMs
+    Public FrmLoginMsSkin As PageLoginMsSkin
     Public FrmLoginLegacy As PageLoginLegacy
     Public FrmLoginAuth As PageLoginAuth
     Public FrmLoginAuthSkin As PageLoginAuthSkin

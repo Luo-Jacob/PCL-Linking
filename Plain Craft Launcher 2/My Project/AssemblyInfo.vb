@@ -9,7 +9,7 @@ Imports System.Runtime.InteropServices
 '查看程序集特性的值
 
 <Assembly: AssemblyTitle("PCL Linking修改版")>
-<Assembly: AssemblyDescription("PCL Linking修改版 v 1.0.2 - 基于 PCL 2.14.0.0 开源版二次开发的多人联机与实用工具增强修改版")>
+<Assembly: AssemblyDescription("PCL Linking修改版 v 1.1.0 - 基于 PCL 2.14.0.0 开源版二次开发的多人联机与实用工具增强修改版")>
 <Assembly: AssemblyCompany("PCL Linking")>
 <Assembly: AssemblyProduct("PCL Linking修改版")>
 <Assembly: AssemblyCopyright("Copyright © 龙腾猫跃 (LTCat) / PCL Linking修改版")>
@@ -51,5 +51,5 @@ Imports System.Runtime.InteropServices
 ' 可以指定所有值，也可以使用以下所示的 "*" 预置版本号和修订号
 ' 方法是按如下所示使用“*”
 
-<Assembly: AssemblyVersion("1.0.2.0")>
-<Assembly: AssemblyFileVersion("1.0.2.0")>
+<Assembly: AssemblyVersion("1.1.0.0")>
+<Assembly: AssemblyFileVersion("1.1.0.0")>

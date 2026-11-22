@@ -180,6 +180,10 @@
                                                     ToolTip="将当前联机房间地址写入选中实例的 servers.dat 并置顶" />
                                     <local:MyButton x:Name="BtnFinishLaunchJoin" Margin="0,4,8,4" Text="启动游戏并直连" Padding="12,7" ColorType="Highlight" Visibility="Collapsed"
                                                     ToolTip="启动当前选中的游戏实例，并自动进入该联机房间" />
+                                    <local:MyButton x:Name="BtnFinishCheckHostMods" Margin="0,4,8,4" Text="核对房主 Mod" Padding="12,7" Visibility="Collapsed"
+                                                    ToolTip="通过 EasyTier 加密侧通道拉取房主实例的 Mod 清单并核对差异，支持一键补齐" />
+                                    <local:MyButton x:Name="BtnFinishLanTransfer" Margin="0,4,8,4" Text="虚网直传 / 存档接力" Padding="12,7"
+                                                    ToolTip="在当前 EasyTier 虚拟局域网内不限体积直传世界存档或大文件（端到端 AES-256 + SHA-256 校验）" />
                                     <local:MyButton x:Name="BtnFinishShareFriend" Margin="0,4,8,4" Text="发给好友" Padding="12,7" ToolTip="前往好友页面发送联机邀请" />
                                     <local:MyButton x:Name="BtnFinishBroadcastFriends" Margin="0,4,8,4" Text="群发全员" Padding="12,7" Visibility="Collapsed"
                                                     ToolTip="向好友列表中的全部好友一键群发当前房间邀请" />
@@ -232,7 +236,9 @@
                                       MinWidth="460" CornerRadius="8">
                             <StackPanel Margin="18,38,18,14">
                                 <TextBlock x:Name="LabSelfNatInfo" Text="正在探测本机 NAT 与节点连接质量……" FontSize="12"
-                                           Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,6" TextWrapping="Wrap" />
+                                           Foreground="{DynamicResource ColorBrushGray2}" Margin="0,0,0,4" TextWrapping="Wrap" />
+                                <TextBlock x:Name="LabFinishSideChannelStatus" Text="" FontSize="11.5"
+                                           Foreground="{DynamicResource ColorBrush2}" Margin="0,0,0,6" TextWrapping="Wrap" Visibility="Collapsed" />
                                 <Border CornerRadius="6" Background="{DynamicResource ColorBrush8}" BorderBrush="{DynamicResource ColorBrush6}"
                                         BorderThickness="1" Padding="10,7" Margin="0,2,0,8">
                                     <StackPanel>

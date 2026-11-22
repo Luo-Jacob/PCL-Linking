@@ -236,10 +236,7 @@ Public Class PageInstanceOverall
         WinGameLog.ShowOrActivate()
     End Sub
 
-    '实例对比 (Diff)
-    Private Sub BtnManageInstanceDiff_Click() Handles BtnManageInstanceDiff.Click
-        Dim CurInst = PageInstanceLeft.Instance
-        If CurInst Is Nothing Then Return
+    Private Function GetOtherLoadedInstances(CurInst As McInstance) As List(Of McInstance)
         Dim Others = McInstanceList.Values.SelectMany(Function(l) l).
             Where(Function(inst) inst IsNot Nothing AndAlso inst.State <> McInstance.McInstanceState.Error AndAlso Not PathUtils.IsSame(inst.PathVersion, CurInst.PathVersion)).
             GroupBy(Function(inst) inst.PathVersion, StringComparer.OrdinalIgnoreCase).
@@ -256,6 +253,14 @@ Public Class PageInstanceOverall
                 End Try
             Next
         End If
+        Return Others
+    End Function
+
+    '实例对比 (Diff)
+    Private Sub BtnManageInstanceDiff_Click() Handles BtnManageInstanceDiff.Click
+        Dim CurInst = PageInstanceLeft.Instance
+        If CurInst Is Nothing Then Return
+        Dim Others = GetOtherLoadedInstances(CurInst)
         If Not Others.Any() Then
             Hint("当前 Minecraft 文件夹下没有其他可对比的游戏实例！", HintType.Blue)
             Return
@@ -528,6 +533,123 @@ Public Class PageInstanceOverall
             Logger.Warn(ex, $"删除版本 {PageInstanceLeft.Instance.Name} 被主动取消")
         Catch ex As Exception
             Logger.Error(ex, $"删除版本 {PageInstanceLeft.Instance.Name} 失败", LogBehavior.Alert)
+        End Try
+    End Sub
+
+    '跨实例迁移键位与设置
+    Private Sub BtnManageMigrateOptions_Click() Handles BtnManageMigrateOptions.Click
+        Try
+            Dim CurInst = PageInstanceLeft.Instance
+            If CurInst Is Nothing Then Return
+            If Not CurInst.IsLoaded Then CurInst.Load()
+            If McInstanceLock.IsLocked(CurInst) Then
+                Hint("该版本正在运行或被锁定，请先关闭游戏后再迁移设置！", HintType.Red)
+                Return
+            End If
+
+            Dim TargetOptionsPath = CurInst.PathIndie & "options.txt"
+            Dim Candidates As New List(Of (Inst As McInstance, OptionsPath As String))
+            For Each Inst In GetOtherLoadedInstances(CurInst)
+                Try
+                    If Not Inst.IsLoaded Then Inst.Load()
+                    Dim SrcOptions = Inst.PathIndie & "options.txt"
+                    If IO.File.Exists(SrcOptions) AndAlso Not PathUtils.IsSame(SrcOptions, TargetOptionsPath) Then
+                        Candidates.Add((Inst, SrcOptions))
+                    End If
+                Catch
+                End Try
+            Next
+
+            If Not Candidates.Any() Then
+                Hint("未在其他隔离实例下找到可迁移的 options.txt 文件！", HintType.Blue)
+                Return
+            End If
+
+            Dim InstRadios = Candidates.Select(Function(C) CType(New MyRadioBox With {
+                .Text = $"{C.Inst.Name}  ({C.Inst.Version.VanillaName} · {C.Inst.Version.ModLoaders})"
+            }, IMyRadio)).ToArray()
+            Dim PickedIdx = MyMsgBoxSelect(InstRadios, $"选择要从哪个实例把键位 / 画面 / 音频设置迁入「{CurInst.Name}」：", "下一步", "取消")
+            If PickedIdx Is Nothing Then Return
+            Dim Picked = Candidates(PickedIdx.Value)
+
+            Dim ScopeRadios As IMyRadio() = {
+                New MyRadioBox With {.Text = "仅迁移按键绑定 (key_*)  — 保留本实例现有画面与音量设定"},
+                New MyRadioBox With {.Text = "迁移键位 + 画面 + 音频设置  — 同步分辨率/视距/FPS/音量与按键"},
+                New MyRadioBox With {.Text = "迁移完整 options.txt  — 同步全部原版选项（原文件自动备份为 .bak）"}
+            }
+            Dim ScopeIdx = MyMsgBoxSelect(ScopeRadios, $"选择从「{Picked.Inst.Name}」迁移到「{CurInst.Name}」的范围：", "开始迁移", "取消")
+            If ScopeIdx Is Nothing Then Return
+
+            Dim Scope = "keybinds"
+            If ScopeIdx.Value = 1 Then
+                Scope = "keybinds_video_audio"
+            ElseIf ScopeIdx.Value = 2 Then
+                Scope = "all"
+            End If
+
+            Dim Result = OptionsKeybindCore.MigrateOptionsTxt(Picked.OptionsPath, TargetOptionsPath, Scope)
+            If Result.MigratedCount = 0 Then
+                Hint($"在「{Picked.Inst.Name}」的 options.txt 中没有找到匹配该范围的配置项。", HintType.Blue)
+            Else
+                Dim BackupNote = If(String.IsNullOrEmpty(Result.BackupPath), "", "（原配置已自动备份为 options.txt.bak）")
+                Hint($"已从「{Picked.Inst.Name}」迁移 {Result.MigratedCount} 项配置到「{CurInst.Name}」{BackupNote}！", HintType.Green)
+            End If
+        Catch ex As Exception
+            Logger.Warn(ex, $"迁移实例 options.txt 失败（{PageInstanceLeft.Instance?.Name}）")
+            Hint($"迁移设置失败：{ex.Message}", HintType.Red)
+        End Try
+    End Sub
+
+    '按键冲突检测与一键解绑
+    Private Sub BtnManageKeyConflicts_Click() Handles BtnManageKeyConflicts.Click
+        Try
+            Dim CurInst = PageInstanceLeft.Instance
+            If CurInst Is Nothing Then Return
+            If Not CurInst.IsLoaded Then CurInst.Load()
+
+            Dim OptionsPath = CurInst.PathIndie & "options.txt"
+            If Not IO.File.Exists(OptionsPath) Then
+                Hint("当前实例尚未生成 options.txt，请先启动一次游戏后再检测按键冲突！", HintType.Blue)
+                Return
+            End If
+
+            Dim Conflicts = OptionsKeybindCore.DetectKeybindConflicts(OptionsPath)
+            If Conflicts.Count = 0 Then
+                MyMsgBox($"未在实例「{CurInst.Name}」的 options.txt 中发现重复绑定的按键冲突。", "按键冲突检测", "确定")
+                Return
+            End If
+
+            Dim Sb As New Text.StringBuilder()
+            Sb.AppendLine($"在实例「{CurInst.Name}」中检测到 {Conflicts.Count} 组同按键冲突（已忽略未绑定按键，并区分 Shift/Ctrl/Alt 组合键）：")
+            Sb.AppendLine()
+            For Each G In Conflicts
+                Sb.AppendLine($"■ 按键 [{G.DisplayKey}] 共 {G.Entries.Count} 项冲突：")
+                For Each E In G.Entries
+                    Sb.AppendLine($"  • {E.DisplayName}  ({E.OptionKey})")
+                Next
+                Sb.AppendLine()
+            Next
+            Dim ReportText = Sb.ToString().TrimEnd()
+
+            Select Case MyMsgBox(ReportText, "按键冲突检测", "一键解绑冲突 Mod 按键", "复制报告", "关闭")
+                Case 1
+                    If McInstanceLock.IsLocked(CurInst) Then
+                        Hint("该版本正在运行或被锁定，请先关闭游戏再修改 options.txt！", HintType.Red)
+                        Return
+                    End If
+                    Dim Res = OptionsKeybindCore.UnbindNonVanillaConflicts(OptionsPath)
+                    If Res.UnboundCount = 0 Then
+                        Hint("当前冲突项全部为原版功能键或无可安全解绑项，未改动 options.txt。", HintType.Blue)
+                    Else
+                        Hint($"已自动解绑 {Res.UnboundCount} 个冲突按键（原文件已备份为 options.txt.bak）！", HintType.Green)
+                    End If
+                Case 2
+                    ClipboardSet(ReportText, False)
+                    Hint("已复制按键冲突报告！", HintType.Green)
+            End Select
+        Catch ex As Exception
+            Logger.Warn(ex, $"检测实例按键冲突失败（{PageInstanceLeft.Instance?.Name}）")
+            Hint($"按键冲突检测失败：{ex.Message}", HintType.Red)
         End Try
     End Sub
 

@@ -120,7 +120,7 @@ Public Class ResourceProject
     ''' <summary>
     ''' 从工程 Json 中初始化实例。若出错会抛出异常。
     ''' </summary>
-    Public Sub New(Data As JObject)
+    Public Sub New(Data As JObject, Optional ExplicitPlatform As ResourcePlatforms = 0)
         If Data.ContainsKey("Tags") Then
 #Region "缓存 JSON"
             Platform = Data("Platform").ToObject(Of Integer)
@@ -143,17 +143,21 @@ Public Class ResourceProject
             End If
 #End Region
         Else
-            Platform = If(Data.ContainsKey("summary"), ResourcePlatforms.CurseForge, ResourcePlatforms.Modrinth)
+            If ExplicitPlatform <> 0 Then
+                Platform = ExplicitPlatform
+            Else
+                Platform = If(Data.ContainsKey("summary"), ResourcePlatforms.CurseForge, ResourcePlatforms.Modrinth)
+            End If
             If Platform = ResourcePlatforms.CurseForge Then
 #Region "CurseForge"
                 '简单信息
                 Id = Data("id")
                 Slug = Data("slug")
                 RawName = Data("name")
-                Description = Data("summary")
-                Website = Data("links")("websiteUrl").ToString.TrimEnd("/")
-                LastUpdate = Data("dateReleased") '#1194
-                DownloadCount = Data("downloadCount")
+                Description = If(Data("summary")?.ToString(), "")
+                Website = If(Data("links")?("websiteUrl")?.ToString(), "").TrimEnd("/"c)
+                LastUpdate = If(Data("dateReleased") IsNot Nothing, Data("dateReleased").ToObject(Of Date), Date.Now) '#1194
+                DownloadCount = If(Data("downloadCount")?.ToObject(Of Integer)(), 0)
                 If Data("logo") IsNot Nothing AndAlso Data("logo").HasValues Then
                     If Data("logo")("thumbnailUrl") Is Nothing OrElse Data("logo")("thumbnailUrl") = "" Then
                         LogoUrl = Data("logo")("url")
@@ -175,6 +179,8 @@ Public Class ResourceProject
                     Types = ResourceTypes.Shader
                 ElseIf Website.Contains("/bukkit-plugins/") OrElse Website.Contains("/plugins/") Then
                     Types = ResourceTypes.Plugin
+                ElseIf Website.Contains("/worlds/") OrElse Data("classId")?.ToObject(Of Integer)() = 17 Then
+                    Types = ResourceTypes.Map
                 Else
                     Types = ResourceTypes.DataPack
                 End If
@@ -185,13 +191,14 @@ Public Class ResourceProject
                     Dim NewFile = ResourceVersion.FromPlatformJson(File, Types)
                     If Not NewFile.DownloadAvailable Then Continue For
                     ModLoaders = ModLoaders Or NewFile.ModLoaders
-                    Dim GameVersions = File("gameVersions").ToObject(Of List(Of String))
+                    Dim GameVersions = If(File("gameVersions")?.ToObject(Of List(Of String)), New List(Of String))
                     If Not GameVersions.Any(Function(v) McVersion.IsStandardFormat(v)) Then Continue For
                     Files.Add(New KeyValuePair(Of Integer, List(Of String))(File("id"), GameVersions))
                 Next
                 For Each File In If(Data("latestFilesIndexes"), New JArray) '这俩玩意儿包含的文件不一样，见 #3599
-                    If Not McVersion.IsStandardFormat(File("gameVersion")) Then Continue For
-                    Files.Add(New KeyValuePair(Of Integer, List(Of String))(File("fileId"), {File("gameVersion").ToString}.ToList))
+                    Dim FileGv = File("gameVersion")?.ToString()
+                    If String.IsNullOrEmpty(FileGv) OrElse Not McVersion.IsStandardFormat(FileGv) Then Continue For
+                    Files.Add(New KeyValuePair(Of Integer, List(Of String))(File("fileId"), {FileGv}.ToList))
                 Next
                 CurseForgeFileIds = Files.Select(Function(f) f.Key).Distinct.ToList
                 Drops = Files.SelectMany(Function(f) f.Value).
@@ -288,8 +295,129 @@ Public Class ResourceProject
                         Case 131 : Tags.Add("世界生成")
                         Case 132 : Tags.Add("冒险")
                         Case 134 : Tags.Add("传送")
+                            '地图
+                        Case 248 : Tags.Add("冒险")
+                        Case 249 : Tags.Add("建筑创作")
+                        Case 250 : Tags.Add("小游戏地图")
+                        Case 251 : Tags.Add("跑酷")
+                        Case 252 : Tags.Add("解谜")
+                        Case 253 : Tags.Add("生存")
+                        Case 4464 : Tags.Add("模组世界")
                     End Select
                 Next
+#End Region
+            ElseIf Platform = ResourcePlatforms.Hangar Then
+#Region "Hangar"
+                Dim Owner = If(Data("namespace")?("owner")?.ToString(), "")
+                Dim ProjSlug = If(Data("namespace")?("slug")?.ToString(), "")
+                Id = $"{Owner}/{ProjSlug}"
+                Slug = ProjSlug
+                RawName = If(Data("name")?.ToString(), ProjSlug)
+                Description = If(Data("description")?.ToString(), "")
+                Website = $"https://hangar.papermc.io/{Owner}/{ProjSlug}"
+                Types = ResourceTypes.Plugin
+                ModLoaders = ModLoaders.None
+                DownloadCount = If(Data("stats")?("downloads")?.ToObject(Of Integer)(), 0)
+                LastUpdate = If(Data("lastUpdated") IsNot Nothing, Data("lastUpdated").ToObject(Of Date), Date.Now)
+                Dim Avatar = Data("avatarUrl")?.ToString()
+                LogoUrl = If(String.IsNullOrWhiteSpace(Avatar), Nothing, Avatar)
+                Tags = New List(Of String)
+                Dim VersionSet As New List(Of String)
+                Dim SupportedPlatforms = TryCast(Data("supportedPlatforms"), JObject)
+                If SupportedPlatforms IsNot Nothing Then
+                    For Each Prop In SupportedPlatforms.Properties()
+                        Select Case Prop.Name.ToUpperInvariant()
+                            Case "PAPER" : Tags.Add("Paper")
+                            Case "VELOCITY" : Tags.Add("Velocity")
+                            Case "WATERFALL" : Tags.Add("Waterfall")
+                        End Select
+                        Dim Arr = TryCast(Prop.Value, JArray)
+                        If Arr IsNot Nothing Then
+                            For Each VerTok In Arr
+                                VersionSet.Add(VerTok.ToString().Trim())
+                            Next
+                        End If
+                    Next
+                End If
+                Drops = VersionSet.Where(Function(v) McVersion.IsStandardFormat(v)).
+                    Select(Function(v) McVersion.VersionToDrop(v)).
+                    Where(Function(d) d <> 209).Distinct().OrderByDescending(Function(d) d).ToList()
+                Select Case If(Data("category")?.ToString(), "").ToLowerInvariant()
+                    Case "admin_tools" : Tags.Add("管理")
+                    Case "chat" : Tags.Add("聊天")
+                    Case "dev_tools" : Tags.Add("开发与接口")
+                    Case "economy" : Tags.Add("经济")
+                    Case "gameplay" : Tags.Add("游戏机制")
+                    Case "games" : Tags.Add("小游戏")
+                    Case "protection" : Tags.Add("防破坏")
+                    Case "role_playing" : Tags.Add("冒险")
+                    Case "world_management" : Tags.Add("世界管理")
+                    Case "misc" : Tags.Add("实用工具")
+                End Select
+#End Region
+            ElseIf Platform = ResourcePlatforms.SpigotMC Then
+#Region "SpigotMC"
+                Dim NumId = If(Data("id")?.ToString(), "")
+                Id = "spigot:" & NumId
+                Slug = NumId
+                RawName = If(Data("name")?.ToString(), NumId)
+                Description = If(Data("tag")?.ToString(), "")
+                Website = $"https://www.spigotmc.org/resources/{NumId}/"
+                Types = ResourceTypes.Plugin
+                ModLoaders = ModLoaders.None
+                DownloadCount = If(Data("downloads")?.ToObject(Of Integer)(), 0)
+                Dim UpdateSec As Long = If(Data("updateDate") IsNot Nothing, Data("updateDate").ToObject(Of Long), 0)
+                LastUpdate = If(UpdateSec > 0, DateTimeOffset.FromUnixTimeSeconds(UpdateSec).LocalDateTime, Date.Now)
+                LogoUrl = Nothing
+                Dim IconObj = TryCast(Data("icon"), JObject)
+                Dim IconBase64 = IconObj?("data")?.ToString()
+                If Not String.IsNullOrWhiteSpace(IconBase64) AndAlso NumId <> "" Then
+                    Try
+                        Dim RawB64 = If(IconBase64.Contains(","), IconBase64.AfterFirst(","), IconBase64)
+                        Dim Bytes = Convert.FromBase64String(RawB64)
+                        If Bytes IsNot Nothing AndAlso Bytes.Length >= 8 Then
+                            Dim IconDir = PathTemp & "Cache\SpigetIcon\"
+                            DirectoryUtils.Create(IconDir)
+                            Dim IconPath = IconDir & NumId & ".png"
+                            If Not File.Exists(IconPath) OrElse New FileInfo(IconPath).Length = 0 Then
+                                File.WriteAllBytes(IconPath, Bytes)
+                            End If
+                            LogoUrl = IconPath
+                        End If
+                    Catch
+                        LogoUrl = Nothing
+                    End Try
+                End If
+                If LogoUrl Is Nothing Then
+                    Dim IconUrlRaw = IconObj?("url")?.ToString()
+                    If Not String.IsNullOrWhiteSpace(IconUrlRaw) AndAlso IconUrlRaw.StartsWith("http", StringComparison.OrdinalIgnoreCase) Then
+                        LogoUrl = IconUrlRaw
+                    End If
+                End If
+                Dim TestedArr = TryCast(Data("testedVersions"), JArray)
+                Drops = If(TestedArr IsNot Nothing,
+                    TestedArr.Select(Function(t) t.ToString().Trim()).
+                        Where(Function(v) McVersion.IsStandardFormat(v)).
+                        Select(Function(v) McVersion.VersionToDrop(v)).
+                        Where(Function(d) d <> 209).Distinct().OrderByDescending(Function(d) d).ToList(),
+                    New List(Of Integer))
+                Tags = New List(Of String) From {"Spigot"}
+                If Data("premium")?.ToObject(Of Boolean)() = True Then Tags.Add("付费插件")
+                If Data("external")?.ToObject(Of Boolean)() = True Then Tags.Add("外链")
+                Dim CatId As Integer = If(Data("category")?("id") IsNot Nothing, Data("category")("id").ToObject(Of Integer), 0)
+                Select Case CatId
+                    Case 5, 10 : Tags.Add("传送")
+                    Case 6, 11, 14 : Tags.Add("聊天")
+                    Case 7, 12, 15 : Tags.Add("实用工具")
+                    Case 9, 26 : Tags.Add("支持库")
+                    Case 17 : Tags.Add("娱乐")
+                    Case 18 : Tags.Add("世界管理")
+                    Case 22 : Tags.Add("游戏机制")
+                    Case 23 : Tags.Add("经济")
+                    Case 24 : Tags.Add("小游戏")
+                    Case 25 : Tags.Add("Skript")
+                    Case 27 : Tags.Add("网页管理")
+                End Select
 #End Region
             Else
 #Region "Modrinth"
@@ -415,6 +543,7 @@ Public Class ResourceProject
 #End Region
             End If
             If Not Tags.Any() Then Tags.Add("其他")
+            Tags = Tags.Distinct().ToList()
             Tags.Sort()
         End If
         '保存缓存
@@ -428,9 +557,14 @@ Public Class ResourceProject
         If Cache.ContainsKey(ProjectId) Then '存在缓存
             Return Cache(ProjectId)
         ElseIf Platform = ResourcePlatforms.CurseForge Then 'CurseForge
-            Return New ResourceProject(DlModRequest("https://api.curseforge.com/v1/mods/" & ProjectId)("data"))
+            Return New ResourceProject(DlModRequest("https://api.curseforge.com/v1/mods/" & ProjectId)("data"), ResourcePlatforms.CurseForge)
+        ElseIf Platform = ResourcePlatforms.Hangar Then 'Hangar
+            Return New ResourceProject(DlModRequest("https://hangar.papermc.io/api/v1/projects/" & ProjectId), ResourcePlatforms.Hangar)
+        ElseIf Platform = ResourcePlatforms.SpigotMC Then 'SpigotMC
+            Dim RawId = If(ProjectId.StartsWith("spigot:", StringComparison.OrdinalIgnoreCase), ProjectId.Substring(7), ProjectId)
+            Return New ResourceProject(DlModRequest("https://api.spiget.org/v2/resources/" & RawId), ResourcePlatforms.SpigotMC)
         Else 'Modrinth
-            Return New ResourceProject(DlModRequest("https://api.modrinth.com/v2/project/" & ProjectId))
+            Return New ResourceProject(DlModRequest("https://api.modrinth.com/v2/project/" & ProjectId), ResourcePlatforms.Modrinth)
         End If
     End Function
     ''' <summary>
@@ -449,6 +583,12 @@ Public Class ResourceProject
         Next
         If Not MissingProjectIds.Any() Then Return
         '联网获取剩余的工程对象
+        If Platform = ResourcePlatforms.Hangar OrElse Platform = ResourcePlatforms.SpigotMC Then
+            For Each MissingId In MissingProjectIds
+                Yield FromProjectId(MissingId, Platform)
+            Next
+            Return
+        End If
         Dim Projects As JArray
         If Platform.HasFlagF(ResourcePlatforms.CurseForge) Then
             Projects = DlModRequest("https://api.curseforge.com/v1/mods",
@@ -588,7 +728,7 @@ Public Class ResourceProject
                 '仅显示 Mod 加载器
                 NewItem.LabVersion.Text = ModLoaderDescriptionFull
             End If
-            NewItem.LabSource.Text = Platform.ToString
+            NewItem.LabSource.Text = If(Platform = ResourcePlatforms.SpigotMC, "SpigotMC", Platform.ToString)
             NewItem.LabTime.Text = StringUtils.FormatTimeSpan(LastUpdate - Date.Now, True)
             NewItem.LabDownload.Text =
                 If(DownloadCount > 100000000, Math.Round(DownloadCount / 100000000, 2) & " 亿",
@@ -599,6 +739,9 @@ Public Class ResourceProject
     Public Sub ApplyLogoToMyImage(Img As MyImage)
         If String.IsNullOrEmpty(LogoUrl) Then
             Img.Source = PathImage & "Icons/NoIcon.png"
+        ElseIf Platform = ResourcePlatforms.Hangar OrElse Platform = ResourcePlatforms.SpigotMC OrElse Not LogoUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) Then
+            Img.Source = LogoUrl
+            Img.FallbackSource = PathImage & "Icons/NoIcon.png"
         Else
             Img.Source = LogoUrl
             Img.FallbackSource = DlSourceModGet(LogoUrl)
@@ -686,7 +829,7 @@ NoSubtitle:
     ''' <summary>
     ''' 工程 ID 对应的工程实例的缓存。不会保存到文件。
     ''' </summary>
-    Protected Friend Shared Cache As New Dictionary(Of String, ResourceProject)
+    Protected Friend Shared Cache As New ConcurrentDictionary(Of String, ResourceProject)
 
     ''' <summary>
     ''' 检查是否与某个 Project 是相同的工程，只是在不同的网站。

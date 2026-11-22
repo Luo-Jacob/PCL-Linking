@@ -90,6 +90,10 @@
                                     ToolTip="打开游戏实时日志监控窗口，实时查看、筛选与导出客户端输出日志。" />
                     <local:MyButton x:Name="BtnManageInstanceDiff" Text="实例对比 (Diff)" MinWidth="135" Padding="13,0" Margin="0,10,16,0" Height="35"
                                     ToolTip="对比当前实例与其他实例的 Mod、加载器及 config 配置文件差异，支持一键补齐独有 Mod。" />
+                    <local:MyButton x:Name="BtnManageMigrateOptions" Text="迁移键位与设置" MinWidth="140" Padding="13,0" Margin="0,10,16,0" Height="35"
+                                    ToolTip="从其他实例选择性迁移按键绑定 (key_*)、画面或音频设置到当前实例（自动生成 .bak 备份）。" />
+                    <local:MyButton x:Name="BtnManageKeyConflicts" Text="按键冲突检测" MinWidth="130" Padding="13,0" Margin="0,10,16,0" Height="35"
+                                    ToolTip="扫描当前实例 options.txt 中重复绑定的冲突按键，并支持一键解绑冲突的非原版 Mod 按键。" />
                     <local:MyButton x:Name="BtnManageInstanceSlim" Text="一键瘦身清理" MinWidth="130" Padding="13,0" Margin="0,10,16,0" Height="35"
                                     ToolTip="扫描并清理历史崩溃报告、旧日志归档、Mixin 调试输出与临时文件，释放磁盘空间。" />
                     <local:MyButton x:Name="BtnManageCheck" Text="补全文件" MinWidth="130" Padding="13,0" Margin="0,10,16,0" Height="35" ToolTip="校验版本依赖文件是否完整，并重新下载 Assets 索引与缺失、校验失败的文件。&#xa;若游戏缺失音效，请尝试此项。" />

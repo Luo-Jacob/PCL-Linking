@@ -111,9 +111,23 @@ if exist "Links\EasyTier.zip" (
     echo [warn] Links\EasyTier.zip not found; launcher will auto-download official EasyTier on first link.
 )
 
+set "DESKTOP="
+for /f "usebackq delims=" %%d in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')" 2^>nul`) do set "DESKTOP=%%d"
+if not defined DESKTOP set "DESKTOP=%USERPROFILE%\Desktop"
+set "DESKTOP_COPIED=0"
+if exist "!DESKTOP!" (
+    copy /y "dist\PCLLK.exe" "!DESKTOP!\PCLLK.exe" >nul
+    if not errorlevel 1 (
+        set "DESKTOP_COPIED=1"
+    ) else (
+        echo [warn] Failed to copy PCLLK.exe to Desktop ^(!DESKTOP!^); file may be in use.
+    )
+)
+
 echo.
 echo ================================================================
 echo  Done:  %cd%\dist\PCLLK.exe
+if "!DESKTOP_COPIED!"=="1" echo  Desktop: !DESKTOP!\PCLLK.exe
 for %%f in ("%cd%\dist\PCLLK.exe") do echo  PCLLK.exe: %%~zf bytes
 if exist "dist\EasyTier.zip" for %%f in ("dist\EasyTier.zip") do echo  EasyTier.zip: %%~zf bytes
 echo ================================================================

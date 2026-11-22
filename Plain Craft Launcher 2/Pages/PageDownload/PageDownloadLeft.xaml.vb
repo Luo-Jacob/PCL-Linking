@@ -11,7 +11,7 @@ Public Class PageDownloadLeft
     ''' <summary>
     ''' 勾选事件改变页面。
     ''' </summary>
-    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemInstall.Check, ItemMod.Check, ItemPack.Check, ItemResourcePack.Check, ItemShader.Check, ItemDataPack.Check, ItemPlugin.Check, ItemPresets.Check
+    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemInstall.Check, ItemMod.Check, ItemPack.Check, ItemResourcePack.Check, ItemShader.Check, ItemDataPack.Check, ItemPlugin.Check, ItemMap.Check, ItemPresets.Check
         '尚未初始化控件属性时，sender.Tag 为 Nothing，会导致切换到页面 0
         '若使用 IsLoaded，则会导致模拟点击不被执行（模拟点击切换页面时，控件的 IsLoaded 为 False）
         If sender.Tag IsNot Nothing Then PageChange(Val(sender.Tag))
@@ -41,6 +41,9 @@ Public Class PageDownloadLeft
             Case FormMain.PageSubType.DownloadPlugin
                 If FrmDownloadPlugin Is Nothing Then FrmDownloadPlugin = New PageDownloadPlugin
                 Return FrmDownloadPlugin
+            Case FormMain.PageSubType.DownloadMap
+                If FrmDownloadMap Is Nothing Then FrmDownloadMap = New PageDownloadMap
+                Return FrmDownloadMap
             Case FormMain.PageSubType.DownloadPresets
                 If FrmDownloadPresets Is Nothing Then FrmDownloadPresets = New PageDownloadPresets
                 Return FrmDownloadPresets
@@ -150,6 +153,13 @@ Public Class PageDownloadLeft
                     FrmDownloadPlugin.PageLoaderRestart()
                 End If
                 ItemPlugin.Checked = True
+            Case FormMain.PageSubType.DownloadMap
+                If FrmDownloadMap IsNot Nothing Then
+                    FrmDownloadMap.Content.Storage = New ResourceSearcher.SearchResult
+                    FrmDownloadMap.Content.Page = 0
+                    FrmDownloadMap.PageLoaderRestart()
+                End If
+                ItemMap.Checked = True
             Case FormMain.PageSubType.DownloadPresets
                 If FrmDownloadPresets IsNot Nothing Then FrmDownloadPresets.Refresh()
                 ItemPresets.Checked = True

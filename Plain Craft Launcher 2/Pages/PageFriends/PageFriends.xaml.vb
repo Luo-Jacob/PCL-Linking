@@ -1445,7 +1445,7 @@
             .LocalEnabledCount = LocalEnabled.Count,
             .IsVersionMismatch = Not String.IsNullOrEmpty(HostManifest.Ver) AndAlso
                                  Not String.Equals(If(TargetInstance.Version.VanillaName, ""), HostManifest.Ver, StringComparison.OrdinalIgnoreCase),
-            .IsLoaderMismatch = HostManifest.Ldr <> CInt(TargetInstance.Version.ModLoaders)
+            .IsLoaderMismatch = Not String.IsNullOrEmpty(HostManifest.Ver) AndAlso HostManifest.Ldr <> CInt(TargetInstance.Version.ModLoaders)
         }
 
         Dim MatchedLocal As New HashSet(Of LocalResourceFile)
@@ -1536,22 +1536,44 @@
         Return Issues
     End Function
 
-    Private Sub StartFriendModSyncDiff(HostManifest As ModFriends.ModSyncManifest)
-        Dim TargetInstance = McInstanceSelected
-        If TargetInstance Is Nothing Then
-            Hint("请先在左侧/主界面选择你要对比与同步的本地游戏实例！", HintType.Red)
+    Public Shared Function BuildCurrentInstanceManifestJson() As String
+        Dim TargetInst = McInstanceSelected
+        If TargetInst Is Nothing Then Return "{}"
+        Dim Manifest = ModFriends.BuildInstanceModSyncManifest(TargetInst)
+        If Manifest Is Nothing Then Return "{}"
+        Return Newtonsoft.Json.JsonConvert.SerializeObject(Manifest)
+    End Function
+
+    Public Shared Sub StartFriendModSyncDiff(HostManifest As ModFriends.ModSyncManifest,
+                                             Optional SilentIfSynced As Boolean = False,
+                                             Optional OnStatusUpdate As Action(Of String) = Nothing)
+        If HostManifest Is Nothing OrElse (String.IsNullOrEmpty(HostManifest.Ver) AndAlso (HostManifest.Items Is Nothing OrElse Not HostManifest.Items.Any())) Then
+            OnStatusUpdate?.Invoke("Mod 核对：房主端未选择游戏实例，已跳过比对")
+            If Not SilentIfSynced Then RunInUi(Sub() Hint("房主端未选中任何游戏实例，暂无 Mod 清单可供对比！", HintType.Blue))
             Return
         End If
-        Hint($"正在与实例「{TargetInstance.Name}」对比 {HostManifest.Items.Count} 个 Mod 差异……", HintType.Blue)
+        Dim TargetInstance = McInstanceSelected
+        If TargetInstance Is Nothing Then
+            OnStatusUpdate?.Invoke("Mod 核对：本地尚未选择游戏实例")
+            If Not SilentIfSynced Then RunInUi(Sub() Hint("请先在左侧/主界面选择你要对比与同步的本地游戏实例！", HintType.Red))
+            Return
+        End If
+        If Not SilentIfSynced Then
+            RunInUi(Sub() Hint($"正在与实例「{TargetInstance.Name}」对比 {HostManifest.Items.Count} 个 Mod 差异……", HintType.Blue))
+        End If
 
         RunInNewThread(
         Sub()
             Try
                 Dim Diff = ScanAndCompareHostMods(HostManifest, TargetInstance)
                 If Diff.IsFullySynced Then
-                    RunInUi(Sub() MyMsgBox($"当前实例「{TargetInstance.Name}」({TargetInstance.Version.VanillaName}, {TargetInstance.Version.ModLoaders}) 的 {Diff.ExactCount} 个 Mod 与房主完全一致，可以直接联机！", "Mod 同步对比完成", "太棒了"))
+                    OnStatusUpdate?.Invoke($"Mod 一致性：与房主完全一致 ({Diff.ExactCount} 个) ✓")
+                    If Not SilentIfSynced Then
+                        RunInUi(Sub() MyMsgBox($"当前实例「{TargetInstance.Name}」({TargetInstance.Version.VanillaName}, {TargetInstance.Version.ModLoaders}) 的 {Diff.ExactCount} 个 Mod 与房主完全一致，可以直接联机！", "Mod 同步对比完成", "太棒了"))
+                    End If
                     Return
                 End If
+                OnStatusUpdate?.Invoke($"Mod 一致性：发现差异（{Diff.MissingDownloadable.Count + Diff.MismatchDownloadable.Count + Diff.DisabledMatch.Count} 项待同步）")
 
                 Dim Sb As New System.Text.StringBuilder()
                 Sb.AppendLine($"房主环境：{HostManifest.Ver} ({CType(HostManifest.Ldr, ModLoaders)}) · 共 {HostManifest.Items.Count} 个 Mod")

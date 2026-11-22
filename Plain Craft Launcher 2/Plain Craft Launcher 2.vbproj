@@ -189,6 +189,9 @@
     <Compile Include="MitCore\ZipSafetyCore.vb" />
     <Compile Include="MitCore\SecurityAndWin32Core.vb" />
     <Compile Include="MitCore\InstanceDiffCore.vb" />
+    <Compile Include="MitCore\ServerConfigAndPluginCore.vb" />
+    <Compile Include="MitCore\EasyTierSideChannelCore.vb" />
+    <Compile Include="MitCore\OptionsKeybindCore.vb" />
     <Compile Include="Modules\Minecraft\ModSnapshot.vb" />
     <Compile Include="Modules\Minecraft\ModPrecheck.vb" />
     <Compile Include="Modules\Minecraft\ModPlaytime.vb" />
@@ -256,6 +259,9 @@
     <Compile Include="Pages\PageDownload\Resource\PageDownloadPlugin.xaml.vb">
       <DependentUpon>PageDownloadPlugin.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageDownload\Resource\PageDownloadMap.xaml.vb">
+      <DependentUpon>PageDownloadMap.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Pages\PageDownload\PageDownloadPresets.xaml.vb">
       <DependentUpon>PageDownloadPresets.xaml</DependentUpon>
     </Compile>
@@ -313,6 +319,9 @@
     <Compile Include="Modules\Minecraft\ModDownload.vb" />
     <Compile Include="Modules\Minecraft\ModLaunch.vb" />
     <Compile Include="Modules\Minecraft\ModMinecraft.vb" />
+    <Compile Include="Pages\PageLaunch\MyMsgLogin.xaml.vb">
+      <DependentUpon>MyMsgLogin.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Pages\PageLaunch\MySkin.xaml.vb">
       <DependentUpon>MySkin.xaml</DependentUpon>
     </Compile>
@@ -324,6 +333,12 @@
     </Compile>
     <Compile Include="Pages\PageLaunch\PageLoginLegacy.xaml.vb">
       <DependentUpon>PageLoginLegacy.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Pages\PageLaunch\PageLoginMs.xaml.vb">
+      <DependentUpon>PageLoginMs.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Pages\PageLaunch\PageLoginMsSkin.xaml.vb">
+      <DependentUpon>PageLoginMsSkin.xaml</DependentUpon>
     </Compile>
     <Compile Include="Pages\PageSelectRight.xaml.vb">
       <DependentUpon>PageSelectRight.xaml</DependentUpon>
@@ -548,6 +563,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Pages\PageLaunch\MyMsgLogin.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Pages\PageLaunch\MySkin.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -561,6 +580,14 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Pages\PageLaunch\PageLoginLegacy.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Pages\PageLaunch\PageLoginMs.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Pages\PageLaunch\PageLoginMsSkin.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -585,6 +612,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Pages\PageDownload\Resource\PageDownloadPlugin.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Pages\PageDownload\Resource\PageDownloadMap.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

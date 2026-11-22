@@ -1911,19 +1911,22 @@ FinishExCatch:
     End Function
 
     ''' <summary>
-    ''' 设置是否应当在正版登录时校验 SSL 证书。
+    ''' 设置是否在正版登录时跳过 SSL 证书校验（仅限异常系统根证书环境排查使用）。
+    ''' False（默认）：保持系统默认严格 TLS 验证；True：跳过 xboxlive / minecraftservices 的证书错误。
     ''' </summary>
-    Public Sub ShouldValidateSslCertificateOnLogin(Enabled As Boolean)
+    Public Sub ShouldValidateSslCertificateOnLogin(SkipSslValidation As Boolean)
+        If Not SkipSslValidation Then
+            ServicePointManager.ServerCertificateValidationCallback = Nothing
+            Return
+        End If
         ServicePointManager.ServerCertificateValidationCallback =
         Function(Sender, Certificate, Chain, Failure)
             Dim Request As HttpWebRequest = TryCast(Sender, HttpWebRequest)
             If Failure = Net.Security.SslPolicyErrors.None Then Return True '已通过验证
-            '基于 #3018 和 #5879，只在访问正版登录 API 时跳过证书验证
+            '基于 #3018 和 #5879，仅在明确启用开关且访问微软/Minecraft 验证接口时跳过证书错误
             Logger.Warn($"未通过 SSL 证书验证（{Failure}），提供的证书为 {Certificate?.Subject}，URL：{Request?.Address}")
-            If Request Is Nothing Then
-                Return Not Enabled
-            ElseIf Request.Address.Host.Contains("xboxlive") OrElse Request.Address.Host.Contains("minecraftservices") Then
-                Return Not Enabled '根据设置决定是否忽略错误
+            If Request IsNot Nothing AndAlso (Request.Address.Host.Contains("xboxlive") OrElse Request.Address.Host.Contains("minecraftservices") OrElse Request.Address.Host.Contains("microsoftonline") OrElse Request.Address.Host.Contains("login.live.com")) Then
+                Return True
             Else
                 Return False
             End If

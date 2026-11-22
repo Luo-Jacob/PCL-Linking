@@ -164,6 +164,8 @@ Public Class PageLinkMain
     '由任意状态切换到 Waiting
     Private Sub SwitchToWaiting(OldState As LinkStates)
         '加载器与进程状态
+        SideChannelSessionId += 1
+        If LabFinishSideChannelStatus IsNot Nothing Then LabFinishSideChannelStatus.Visibility = Visibility.Collapsed
         LinkLoader.Cancel()
         SyncLock LinkLoader.LockState
             LinkLoader.State = LoadState.Waiting
@@ -656,6 +658,8 @@ Public Class PageLinkMain
     '由 Loading 状态切换到 Failed
     Private Sub SwitchToFailed(OldState As LinkStates)
         '加载器与进程状态
+        SideChannelSessionId += 1
+        If LabFinishSideChannelStatus IsNot Nothing Then LabFinishSideChannelStatus.Visibility = Visibility.Collapsed
         LinkLoader.Cancel()
         ProcessStop()
         'UI 更新
@@ -749,6 +753,12 @@ Public Class PageLinkMain
 
         UpdatePanelVisibility() '页面的实际切换会由 Loader 调用 MyPageRight 来触发
 
+        SideChannelSessionId += 1
+        Dim CurSessionId = SideChannelSessionId
+        SyncLock HostManifestCacheLock
+            CachedHostManifestJson = Nothing
+        End SyncLock
+
         'UI 更新
         If IsServerSide Then
             LabFinishTitle.Text = "已创建房间"
@@ -760,6 +770,8 @@ Public Class PageLinkMain
             BtnFinishBroadcastFriends.Visibility = Visibility.Visible
             BtnFinishLaunchJoin.Visibility = Visibility.Collapsed
             BtnFinishAddServersDat.Visibility = Visibility.Collapsed
+            BtnFinishCheckHostMods.Visibility = Visibility.Collapsed
+            BtnFinishLanTransfer.Visibility = Visibility.Visible
             Copy() '立即复制邀请码
             '下边栏
             BtnFinishPort.Visibility = Visibility.Visible
@@ -767,6 +779,7 @@ Public Class PageLinkMain
             BtnFinishIp.Visibility = Visibility.Collapsed
             LabFinishIp.Visibility = Visibility.Collapsed
             LabFinishPort.Text = ServerPort
+            StartSideChannelHostForRoom()
         Else
             LabFinishTitle.Text = "已加入房间"
             LabFinishDesc.Text = $"在多人游戏页面的最下方就能找到联机房间，也可直接点击下方按钮启动并直连！{vbCrLf}注意：使用离线登录时不要手动输入 IP！"
@@ -777,12 +790,24 @@ Public Class PageLinkMain
             BtnFinishBroadcastFriends.Visibility = Visibility.Collapsed
             BtnFinishLaunchJoin.Visibility = Visibility.Visible
             BtnFinishAddServersDat.Visibility = Visibility.Visible
+            BtnFinishCheckHostMods.Visibility = Visibility.Visible
+            BtnFinishLanTransfer.Visibility = Visibility.Visible
             '下边栏
             BtnFinishPort.Visibility = Visibility.Collapsed
             LabFinishPort.Visibility = Visibility.Collapsed
             LabFinishIp.Text = ClientAddress
             BtnFinishIp.Visibility = Visibility.Visible
             LabFinishIp.Visibility = Visibility.Visible
+            If LabFinishSideChannelStatus IsNot Nothing Then
+                LabFinishSideChannelStatus.Visibility = Visibility.Visible
+                LabFinishSideChannelStatus.Text = "虚网辅助通道：正在静默核对房主 Mod 一致性…"
+            End If
+            RunInNewThread(
+            Sub()
+                Thread.Sleep(1500)
+                If CurSessionId <> SideChannelSessionId OrElse LinkState <> LinkStates.Finished Then Return
+                RunModConsistencyHandshake(SilentIfSynced:=True, ExpectedSessionId:=CurSessionId)
+            End Sub, "Link Auto Mod Handshake")
             If AutoLaunchGameAfterJoin Then
                 AutoLaunchGameAfterJoin = False
                 Dispatcher.BeginInvoke(Threading.DispatcherPriority.ApplicationIdle, New Action(AddressOf LaunchConnectedRoomGame))
@@ -870,6 +895,10 @@ Public Class PageLinkMain
     ''' 客户端映射后的端口号。
     ''' </summary>
     Private ClientPort As Integer
+    ''' <summary>
+    ''' 客户端辅助控制/直传隧道本地映射端口。
+    ''' </summary>
+    Private ClientControlPort As Integer
     ''' <summary>
     ''' RPC 端口号。
     ''' </summary>
@@ -1067,10 +1096,11 @@ Public Class PageLinkMain
         Task.Progress = 0.13
         '获取空闲端口
         UpdateLoadingPage("正在启动联机模块……", "启动联机模块")
-        Dim FreePorts = FindFreePorts(5, ServerPort)
+        Dim FreePorts = FindFreePorts(6, ServerPort)
         ClientPort = FreePorts(0)
         RPCPort = FreePorts(1)
         Dim ListenersPort As Integer = FreePorts(2) '它会占用【当前、当前 +1、当前 +2】共三个端口
+        ClientControlPort = FreePorts(5)
         '获取启动参数
         Dim Arguments As String = BuildArguments(RawPeers, ListenersPort)
         '启动进程
@@ -1165,9 +1195,9 @@ Public Class PageLinkMain
         Dim HostName As String = If(IsServerSide, "H|", "J|") & GetLinkUserName()
         Dim ExtraPorts = ModLink.ParseExtraPorts(Settings.Get(Of String)("LinkExtraPorts"), ServerPort)
         If IsServerSide Then
-            Dim AllPorts = New List(Of Integer) From {ServerPort}
+            Dim AllPorts = New List(Of Integer) From {ServerPort, ModLink.LinkControlPort}
             AllPorts.AddRange(ExtraPorts)
-            Dim PortSpec = String.Join(",", AllPorts)
+            Dim PortSpec = String.Join(",", AllPorts.Distinct())
             Builder.Append($" -i {LinkServerAddress} --hostname={HostName}")
             Builder.Append($" --tcp-whitelist={PortSpec} --udp-whitelist={PortSpec}")
         Else
@@ -1181,6 +1211,9 @@ Public Class PageLinkMain
             End If
             Builder.Append($" --port-forward tcp://{IPAddress.Loopback}:{ClientPort}/{LinkServerAddress}:{ServerPort}")
             Builder.Append($" --port-forward udp://{IPAddress.Loopback}:{ClientPort}/{LinkServerAddress}:{ServerPort}")
+            If ClientControlPort > 0 Then
+                Builder.Append($" --port-forward tcp://{IPAddress.Loopback}:{ClientControlPort}/{LinkServerAddress}:{ModLink.LinkControlPort}")
+            End If
             '扩展端口转发（如 Simple Voice Chat 24454 等）
             For Each ExtraP In ExtraPorts
                 If ExtraP = ClientPort Then Continue For
@@ -1235,6 +1268,7 @@ Public Class PageLinkMain
     ''' 即使失败也不会抛出异常。
     ''' </summary>
     Public Shared Sub ProcessStop()
+        StopSideChannelHostStatic()
         Try
             Dim CurrentCoreId As Integer = -1
             SyncLock ProcessCoreLock
@@ -2118,6 +2152,446 @@ Public Class PageLinkMain
             Row.Child = GridRow
             PanLinkBookmarks.Children.Add(Row)
         Next
+    End Sub
+
+#End Region
+
+#Region "虚网 Mod 一致性握手与点对点大文件/存档直传"
+
+    Private SideChannelSessionId As Integer = 0
+    Private Shared ReadOnly SideHostLock As New Object
+    Private Shared ActiveSideHost As EasyTierSideChannelCore.EasyTierSideChannelHost = Nothing
+    Private Shared ReadOnly ActiveTempOfferZips As New List(Of String)
+    Private CachedHostManifestJson As String = Nothing
+    Private ReadOnly HostManifestCacheLock As New Object
+
+    Private Shared Sub StopSideChannelHostStatic()
+        SyncLock SideHostLock
+            If ActiveSideHost IsNot Nothing Then
+                Try
+                    ActiveSideHost.Dispose()
+                Catch
+                End Try
+                ActiveSideHost = Nothing
+            End If
+            For Each TempZip In ActiveTempOfferZips
+                Try
+                    If IO.File.Exists(TempZip) Then IO.File.Delete(TempZip)
+                Catch
+                End Try
+            Next
+            ActiveTempOfferZips.Clear()
+        End SyncLock
+    End Sub
+
+    Private Sub SetSideChannelStatus(Text As String)
+        RunInUi(
+        Sub()
+            If LabFinishSideChannelStatus Is Nothing Then Return
+            LabFinishSideChannelStatus.Visibility = Visibility.Visible
+            LabFinishSideChannelStatus.Text = Text
+        End Sub)
+    End Sub
+
+    Private Function GetTargetSavesDir() As String
+        Dim Dir = If(McInstanceSelected IsNot Nothing,
+            $"{McInstanceSelected.PathIndie}saves\",
+            $"{McFolderSelected}saves\")
+        Return Dir
+    End Function
+
+    Private Function SanitizeWorldSaveFolderName(RawName As String, SavesDir As String) As String
+        Dim Clean = If(RawName, "").Replace(".zip", "").
+            Replace("\", "＼").Replace("/", "／").Replace("|", "｜").Replace(":", "：").
+            Replace("<", "＜").Replace(">", "＞").Replace("*", "＊").Replace("?", "？").
+            Replace("""", "").Trim()
+        Dim Validator As New ValidateFolderName(SavesDir.TrimEnd("\"c))
+        If Validator.Validate(Clean) <> "" Then Clean = ""
+        Return MyMsgBoxInput("输入接收后的世界存档名称", "将安全解压并核对 level.dat 后放入当前实例 saves 目录：", Clean,
+                             New Collection(Of Validate) From {Validator})
+    End Function
+
+    Private Function PromptTransferReceiveDestination(Kind As String, DisplayName As String, RawFileName As String, SizeBytes As Long, SenderName As String, HeaderTitle As String) _
+        As (Accepted As Boolean, TempReceivePath As String, FinalDestPath As String, ActionKind As String, Message As String)
+        Dim Result As (Accepted As Boolean, TempReceivePath As String, FinalDestPath As String, ActionKind As String, Message As String) = (False, "", "", "", "用户已取消")
+        RunInUiWait(
+        Sub()
+            Dim IsSave = String.Equals(Kind, "save", StringComparison.OrdinalIgnoreCase)
+            Dim DescText = $"发送者：{SenderName}{vbCrLf}" &
+                           $"类型：{If(IsSave, "Minecraft 世界存档", "大文件直传")}{vbCrLf}" &
+                           $"名称：{DisplayName}{vbCrLf}" &
+                           $"文件名：{RawFileName}{vbCrLf}" &
+                           $"大小：{EasyTierSideChannelCore.FormatByteSizeDisplay(SizeBytes)}{vbCrLf}{vbCrLf}" &
+                           "接收过程经 EasyTier 虚网点对点 AES-256 加密并强制核对 SHA-256 校验。"
+            If IsSave Then
+                Dim Choice = MyMsgBox(DescText, HeaderTitle, "接收并解压到 saves\", "接收并另存为 .zip", "拒绝")
+                If Choice = 1 Then
+                    Dim SavesDir = GetTargetSavesDir()
+                    IO.Directory.CreateDirectory(SavesDir)
+                    Dim SaveName = SanitizeWorldSaveFolderName(DisplayName, SavesDir)
+                    If String.IsNullOrEmpty(SaveName) Then
+                        Result = (False, "", "", "", "未确认存档名称")
+                        Return
+                    End If
+                    IO.Directory.CreateDirectory(PathTemp & "Cache\")
+                    Dim TmpZip = PathTemp & $"Cache\RecvSave_{GetUuid()}.zip"
+                    Result = (True, TmpZip, IO.Path.Combine(SavesDir, SaveName), "extract_save", "")
+                ElseIf Choice = 2 Then
+                    Dim TargetZip = Dialogs.SaveFile("选择世界压缩包保存位置", RawFileName, GetTargetSavesDir(), {("zip", "世界存档压缩包")})
+                    If String.IsNullOrEmpty(TargetZip) Then
+                        Result = (False, "", "", "", "未选择保存位置")
+                        Return
+                    End If
+                    IO.Directory.CreateDirectory(PathTemp & "Cache\")
+                    Dim TmpFile = PathTemp & $"Cache\RecvFile_{GetUuid()}.tmp"
+                    Result = (True, TmpFile, TargetZip, "save_file", "")
+                Else
+                    Result = (False, "", "", "", "对方拒绝了本次存档接收")
+                End If
+            Else
+                Dim Choice = MyMsgBox(DescText, HeaderTitle, "选择保存位置并接收", "拒绝")
+                If Choice = 1 Then
+                    Dim Ext = IO.Path.GetExtension(RawFileName).TrimStart("."c)
+                    If Ext = "" Then Ext = "*"
+                    Dim TargetFile = Dialogs.SaveFile("选择文件保存位置", RawFileName, McFolderSelected, {(Ext, "传输文件")})
+                    If String.IsNullOrEmpty(TargetFile) Then
+                        Result = (False, "", "", "", "未选择保存位置")
+                        Return
+                    End If
+                    IO.Directory.CreateDirectory(PathTemp & "Cache\")
+                    Dim TmpFile = PathTemp & $"Cache\RecvFile_{GetUuid()}.tmp"
+                    Result = (True, TmpFile, TargetFile, "save_file", "")
+                Else
+                    Result = (False, "", "", "", "对方拒绝了本次文件接收")
+                End If
+            End If
+        End Sub)
+        Return Result
+    End Function
+
+    Private Sub StartSideChannelHostForRoom()
+        StopSideChannelHostStatic()
+        Dim Callbacks As New EasyTierSideChannelCore.SideChannelHostCallbacks With {
+            .GetModManifestJson =
+            Function() As String
+                SyncLock HostManifestCacheLock
+                    If CachedHostManifestJson IsNot Nothing Then Return CachedHostManifestJson
+                End SyncLock
+                Dim Computed = PageFriends.BuildCurrentInstanceManifestJson()
+                SyncLock HostManifestCacheLock
+                    CachedHostManifestJson = Computed
+                End SyncLock
+                Return Computed
+            End Function,
+            .ConfirmIncomingPush =
+            Function(Offer)
+                SetSideChannelStatus($"收到 {Offer.Sender} 发来的「{Offer.Name}」({EasyTierSideChannelCore.FormatByteSizeDisplay(Offer.SizeBytes)})，等待确认…")
+                Return PromptTransferReceiveDestination(Offer.Kind, Offer.Name, Offer.FileName, Offer.SizeBytes, Offer.Sender, "收到虚网文件直传请求")
+            End Function,
+            .OnPushCompleted =
+            Sub(Offer, Success, FinalDest, ErrMsg)
+                If Success Then
+                    SetSideChannelStatus($"已接收并校验来自 {Offer.Sender} 的「{Offer.Name}」✓")
+                    RunInUi(Sub() Hint($"已完成虚网接收与校验：{IO.Path.GetFileName(FinalDest)}", HintType.Green))
+                Else
+                    SetSideChannelStatus($"接收「{Offer.Name}」失败：{ErrMsg}")
+                    RunInUi(Sub() Hint($"接收文件失败：{ErrMsg}", HintType.Red))
+                End If
+            End Sub,
+            .OnLog = Sub(Msg) Logger.Info($"[LinkSideHost] {Msg}")
+        }
+        Try
+            Dim Host As New EasyTierSideChannelCore.EasyTierSideChannelHost(ModLink.LinkControlPort, NetworkSecret, Callbacks)
+            Host.Start()
+            SyncLock SideHostLock
+                ActiveSideHost = Host
+            End SyncLock
+            SetSideChannelStatus($"虚网辅助通道已就绪（端口 {ModLink.LinkControlPort} · 支持 Mod 自动核对与存档直传）")
+        Catch ex As Exception
+            Logger.Warn(ex, $"启动虚网辅助监听端口 {ModLink.LinkControlPort} 失败")
+            SetSideChannelStatus($"虚网辅助监听未启用（端口 {ModLink.LinkControlPort} 被占用：{ex.Message}）")
+        End Try
+    End Sub
+
+    Private Sub RunModConsistencyHandshake(SilentIfSynced As Boolean, ExpectedSessionId As Integer)
+        Try
+            If ClientControlPort <= 0 Then
+                If Not SilentIfSynced Then RunInUi(Sub() Hint("当前联机未建立辅助控制隧道，无法核对房主 Mod！", HintType.Red))
+                Return
+            End If
+            If Not SilentIfSynced Then
+                SetSideChannelStatus("Mod 一致性：正在向房主请求 Mod 清单…")
+            End If
+            Dim ManifestJson = EasyTierSideChannelCore.RequestModManifest(ClientControlPort, NetworkSecret, TimeoutMs:=15000)
+            If ExpectedSessionId <> SideChannelSessionId OrElse LinkState <> LinkStates.Finished Then Return
+            Dim HostManifest = Newtonsoft.Json.JsonConvert.DeserializeObject(Of ModFriends.ModSyncManifest)(ManifestJson)
+            PageFriends.StartFriendModSyncDiff(
+                HostManifest,
+                SilentIfSynced:=SilentIfSynced,
+                OnStatusUpdate:=Sub(StatusText) SetSideChannelStatus(StatusText))
+        Catch ex As Exception
+            Logger.Warn(ex, "虚网 Mod 一致性握手核对失败")
+            If ExpectedSessionId <> SideChannelSessionId OrElse LinkState <> LinkStates.Finished Then Return
+            If SilentIfSynced Then
+                SetSideChannelStatus("Mod 核对：房主端未启用或暂未响应（可稍后点「核对房主 Mod」重试）")
+            Else
+                SetSideChannelStatus($"Mod 核对失败：{ex.Message}")
+                RunInUi(Sub() Hint($"核对房主 Mod 失败：{ex.Message}", HintType.Red))
+            End If
+        End Try
+    End Sub
+
+    Private Sub BtnFinishCheckHostMods_Click() Handles BtnFinishCheckHostMods.Click
+        If IsServerSide OrElse LinkState <> LinkStates.Finished Then Return
+        Dim CurSess = SideChannelSessionId
+        RunInNewThread(Sub() RunModConsistencyHandshake(SilentIfSynced:=False, ExpectedSessionId:=CurSess), "Manual Host Mod Handshake")
+    End Sub
+
+    Private Function SelectCurrentWorldSaveFolder() As IO.DirectoryInfo
+        Dim SavesDir = GetTargetSavesDir()
+        Dim Worlds As New List(Of IO.DirectoryInfo)
+        If IO.Directory.Exists(SavesDir) Then
+            Dim AllDirs = New IO.DirectoryInfo(SavesDir).GetDirectories().OrderByDescending(Function(d) d.LastWriteTime).ToList()
+            Dim WithLevel = AllDirs.Where(Function(d) IO.File.Exists(IO.Path.Combine(d.FullName, "level.dat"))).ToList()
+            Worlds = If(WithLevel.Any(), WithLevel, AllDirs)
+        End If
+        If Not Worlds.Any() Then
+            Hint("当前实例的 saves 目录中没有找到可发送的存档！", HintType.Red)
+            Return Nothing
+        End If
+        Dim Radios = Worlds.Select(Function(w) CType(New MyRadioBox With {.Text = $"{w.Name}（更新于 {w.LastWriteTime:MM-dd HH:mm}）"}, IMyRadio)).ToArray()
+        Dim Idx = MyMsgBoxSelect(Radios, "选择要通过虚网直传的世界存档：", "打包并继续", "取消")
+        If Idx Is Nothing Then Return Nothing
+        Return Worlds(Idx.Value)
+    End Function
+
+    Private Sub BtnFinishLanTransfer_Click() Handles BtnFinishLanTransfer.Click
+        If LinkState <> LinkStates.Finished Then Return
+        If IsServerSide Then
+            HandleHostLanTransferMenu()
+        Else
+            HandleClientLanTransferMenu()
+        End If
+    End Sub
+
+    Private Sub HandleHostLanTransferMenu()
+        Dim HostSnap As EasyTierSideChannelCore.EasyTierSideChannelHost
+        SyncLock SideHostLock
+            HostSnap = ActiveSideHost
+        End SyncLock
+        If HostSnap Is Nothing Then
+            StartSideChannelHostForRoom()
+            SyncLock SideHostLock
+                HostSnap = ActiveSideHost
+            End SyncLock
+            If HostSnap Is Nothing Then
+                Hint("虚网辅助监听端口未能启动，请检查端口占用后重试！", HintType.Red)
+                Return
+            End If
+        End If
+
+        Dim Options As IMyRadio() = {
+            New MyRadioBox With {.Text = "共享当前实例的世界存档（队友一键拉取 / 接力当房主）"},
+            New MyRadioBox With {.Text = "共享本地任意大文件（整合包 / Mod 包 / 压缩包）"},
+            New MyRadioBox With {.Text = $"查看 / 清理当前已共享列表（{HostSnap.GetOffersSnapshot().Count} 项）"}
+        }
+        Dim OpIdx = MyMsgBoxSelect(Options, "房主虚网直传（端到端 AES-256 加密，不限文件体积）：", "确定", "取消")
+        If OpIdx Is Nothing Then Return
+
+        If OpIdx.Value = 0 Then
+            Dim ChosenWorld = SelectCurrentWorldSaveFolder()
+            If ChosenWorld Is Nothing Then Return
+            IO.Directory.CreateDirectory(PathTemp & "Cache\")
+            Dim OfferZip = PathTemp & $"Cache\OfferSave_{GetUuid()}.zip"
+            SetSideChannelStatus($"正在打包存档「{ChosenWorld.Name}」（自动跳过 session.lock）…")
+            RunInNewThread(
+            Sub()
+                Try
+                    Dim Packed = EasyTierSideChannelCore.PackWorldSaveToZip(ChosenWorld.FullName, OfferZip,
+                        Sub(DoneCnt, TotalCnt) SetSideChannelStatus($"正在打包存档「{ChosenWorld.Name}」({DoneCnt}/{TotalCnt} 个文件)…"))
+                    Dim Offer As New EasyTierSideChannelCore.SideChannelOffer With {
+                        .OfferId = GetUuid().ToString(),
+                        .Kind = "save",
+                        .Name = ChosenWorld.Name,
+                        .FileName = ChosenWorld.Name & ".zip",
+                        .FilePath = OfferZip,
+                        .SizeBytes = Packed.SizeBytes,
+                        .Sha256 = Packed.Sha256,
+                        .Sender = GetLinkUserName()
+                    }
+                    SyncLock SideHostLock
+                        ActiveTempOfferZips.Add(OfferZip)
+                    End SyncLock
+                    HostSnap.AddOffer(Offer)
+                    Dim SizeDesc = EasyTierSideChannelCore.FormatByteSizeDisplay(Packed.SizeBytes)
+                    SetSideChannelStatus($"已上架世界存档「{ChosenWorld.Name}」({SizeDesc})，加入者点「虚网直传」即可拉取")
+                    RunInUi(Sub() Hint($"已上架存档「{ChosenWorld.Name}」({SizeDesc})！通知好友点击「虚网直传 / 存档接力」拉取即可。", HintType.Green))
+                Catch ex As Exception
+                    SetSideChannelStatus($"打包共享存档失败：{ex.Message}")
+                    RunInUi(Sub() Hint($"打包共享存档失败：{ex.Message}", HintType.Red))
+                End Try
+            End Sub, "Pack Host Offer World")
+        ElseIf OpIdx.Value = 1 Then
+            Dim FilePath = Dialogs.SelectFile("选择要共享给房间成员的本地文件", False, filter:="所有文件 (*.*)|*.*").FirstOrDefault()
+            If String.IsNullOrEmpty(FilePath) OrElse Not IO.File.Exists(FilePath) Then Return
+            Dim FileName = IO.Path.GetFileName(FilePath)
+            SetSideChannelStatus($"正在为「{FileName}」计算 SHA-256 摘要…")
+            RunInNewThread(
+            Sub()
+                Try
+                    Dim Fi As New IO.FileInfo(FilePath)
+                    Dim ShaHex = EasyTierSideChannelCore.ComputeSha256HexFile(FilePath)
+                    Dim Offer As New EasyTierSideChannelCore.SideChannelOffer With {
+                        .OfferId = GetUuid().ToString(),
+                        .Kind = "file",
+                        .Name = FileName,
+                        .FileName = FileName,
+                        .FilePath = FilePath,
+                        .SizeBytes = Fi.Length,
+                        .Sha256 = ShaHex,
+                        .Sender = GetLinkUserName()
+                    }
+                    HostSnap.AddOffer(Offer)
+                    Dim SizeDesc = EasyTierSideChannelCore.FormatByteSizeDisplay(Fi.Length)
+                    SetSideChannelStatus($"已共享文件「{FileName}」({SizeDesc})，等待队友拉取")
+                    RunInUi(Sub() Hint($"已上架文件「{FileName}」({SizeDesc})！", HintType.Green))
+                Catch ex As Exception
+                    SetSideChannelStatus($"准备共享文件失败：{ex.Message}")
+                    RunInUi(Sub() Hint($"准备共享文件失败：{ex.Message}", HintType.Red))
+                End Try
+            End Sub, "Hash Host Offer File")
+        ElseIf OpIdx.Value = 2 Then
+            Dim Offers = HostSnap.GetOffersSnapshot()
+            If Not Offers.Any() Then
+                Hint("当前没有正在共享的存档或文件。", HintType.Blue)
+                Return
+            End If
+            Dim Summary = String.Join(vbCrLf, Offers.Select(Function(o, idx) $"{idx + 1}. [{If(o.Kind = "save", "存档", "文件")}] {o.Name} ({EasyTierSideChannelCore.FormatByteSizeDisplay(o.SizeBytes)})"))
+            If MyMsgBox("当前已上架以下共享项：" & vbCrLf & vbCrLf & Summary, "虚网共享列表", "清空全部共享", "关闭") = 1 Then
+                HostSnap.ClearOffers()
+                SetSideChannelStatus("已清空当前所有虚网共享项")
+                Hint("已清空当前虚网共享列表", HintType.Green)
+            End If
+        End If
+    End Sub
+
+    Private Sub HandleClientLanTransferMenu()
+        If ClientControlPort <= 0 Then
+            Hint("当前联机未建立辅助直传隧道！", HintType.Red)
+            Return
+        End If
+        Dim Options As IMyRadio() = {
+            New MyRadioBox With {.Text = "从房主拉取共享的世界存档 / 大文件"},
+            New MyRadioBox With {.Text = "发送当前实例的世界存档给房主（存档接力 / 备份）"},
+            New MyRadioBox With {.Text = "发送本地任意大文件给房主"}
+        }
+        Dim OpIdx = MyMsgBoxSelect(Options, "成员虚网直传（端到端 AES-256 加密，不限文件体积）：", "确定", "取消")
+        If OpIdx Is Nothing Then Return
+
+        If OpIdx.Value = 0 Then
+            SetSideChannelStatus("正在查询房主共享列表…")
+            RunInNewThread(
+            Sub()
+                Try
+                    Dim Offers = EasyTierSideChannelCore.RequestOfferList(ClientControlPort, NetworkSecret)
+                    If Not Offers.Any() Then
+                        SetSideChannelStatus("房主当前尚未共享任何存档或文件")
+                        RunInUi(Sub() Hint("房主当前还没有上架共享存档或文件，请先让房主点「虚网直传」添加共享！", HintType.Blue))
+                        Return
+                    End If
+                    RunInUi(
+                    Sub()
+                        Dim OfferRadios = Offers.Select(Function(o) CType(New MyRadioBox With {
+                            .Text = $"[{If(o.Kind = "save", "存档", "文件")}] {o.Name}  ({EasyTierSideChannelCore.FormatByteSizeDisplay(o.SizeBytes)})"
+                        }, IMyRadio)).ToArray()
+                        Dim PickIdx = MyMsgBoxSelect(OfferRadios, "选择要从房主拉取的共享项目：", "下一步", "取消")
+                        If PickIdx Is Nothing Then Return
+                        Dim ChosenOffer = Offers(PickIdx.Value)
+                        Dim DestPlan = PromptTransferReceiveDestination(ChosenOffer.Kind, ChosenOffer.Name, ChosenOffer.FileName, ChosenOffer.SizeBytes, ChosenOffer.Sender, "确认接收房主共享文件")
+                        If Not DestPlan.Accepted Then Return
+                        RunInNewThread(
+                        Sub()
+                            Try
+                                EasyTierSideChannelCore.PullOfferToFile(
+                                    ClientControlPort, NetworkSecret, ChosenOffer.OfferId, DestPlan.TempReceivePath,
+                                    Sub(DoneB, TotalB)
+                                        Dim Pct = If(TotalB > 0, Math.Min(100, CInt(DoneB * 100L \ TotalB)), 0)
+                                        SetSideChannelStatus($"正在加密接收「{ChosenOffer.Name}」：{Pct}% ({EasyTierSideChannelCore.FormatByteSizeDisplay(DoneB)} / {EasyTierSideChannelCore.FormatByteSizeDisplay(TotalB)})")
+                                    End Sub)
+                                If DestPlan.ActionKind = "extract_save" Then
+                                    SetSideChannelStatus($"接收与 SHA-256 校验通过，正在安全解压存档到 saves\…")
+                                    EasyTierSideChannelCore.ExtractWorldSaveZipSafely(DestPlan.TempReceivePath, DestPlan.FinalDestPath, DeleteZipAfter:=True)
+                                ElseIf Not DestPlan.FinalDestPath.Equals(DestPlan.TempReceivePath, StringComparison.OrdinalIgnoreCase) Then
+                                    IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(DestPlan.FinalDestPath))
+                                    If IO.File.Exists(DestPlan.FinalDestPath) Then IO.File.Delete(DestPlan.FinalDestPath)
+                                    IO.File.Move(DestPlan.TempReceivePath, DestPlan.FinalDestPath)
+                                End If
+                                SetSideChannelStatus($"已成功接收「{ChosenOffer.Name}」并完成 SHA-256 校验 ✓")
+                                RunInUi(Sub() Hint($"虚网直传完成：{IO.Path.GetFileName(DestPlan.FinalDestPath)}", HintType.Green))
+                            Catch dlEx As Exception
+                                SetSideChannelStatus($"拉取「{ChosenOffer.Name}」失败：{dlEx.Message}")
+                                RunInUi(Sub() Hint($"拉取共享文件失败：{dlEx.Message}", HintType.Red))
+                            End Try
+                        End Sub, "Pull Offer File")
+                    End Sub)
+                Catch ex As Exception
+                    SetSideChannelStatus($"查询房主共享列表失败：{ex.Message}")
+                    RunInUi(Sub() Hint($"连接房主直传通道失败：{ex.Message}", HintType.Red))
+                End Try
+            End Sub, "Request Host Offers")
+        ElseIf OpIdx.Value = 1 Then
+            Dim ChosenWorld = SelectCurrentWorldSaveFolder()
+            If ChosenWorld Is Nothing Then Return
+            IO.Directory.CreateDirectory(PathTemp & "Cache\")
+            Dim TmpZip = PathTemp & $"Cache\PushSave_{GetUuid()}.zip"
+            SetSideChannelStatus($"正在打包存档「{ChosenWorld.Name}」（自动跳过 session.lock）…")
+            RunInNewThread(
+            Sub()
+                Try
+                    Dim Packed = EasyTierSideChannelCore.PackWorldSaveToZip(ChosenWorld.FullName, TmpZip,
+                        Sub(DoneCnt, TotalCnt) SetSideChannelStatus($"正在打包存档「{ChosenWorld.Name}」({DoneCnt}/{TotalCnt} 个文件)…"))
+                    SetSideChannelStatus($"等待房主确认接收存档「{ChosenWorld.Name}」({EasyTierSideChannelCore.FormatByteSizeDisplay(Packed.SizeBytes)})…")
+                    EasyTierSideChannelCore.PushFileToHost(
+                        ClientControlPort, NetworkSecret, "save", ChosenWorld.Name, ChosenWorld.Name & ".zip", TmpZip, GetLinkUserName(),
+                        PrecomputedSha256:=Packed.Sha256,
+                        OnProgress:=Sub(DoneB, TotalB)
+                                        Dim Pct = If(TotalB > 0, Math.Min(100, CInt(DoneB * 100L \ TotalB)), 0)
+                                        SetSideChannelStatus($"正在向房主直传「{ChosenWorld.Name}」：{Pct}% ({EasyTierSideChannelCore.FormatByteSizeDisplay(DoneB)} / {EasyTierSideChannelCore.FormatByteSizeDisplay(TotalB)})")
+                                    End Sub)
+                    SetSideChannelStatus($"已将世界存档「{ChosenWorld.Name}」送达房主并完成校验 ✓")
+                    RunInUi(Sub() Hint($"存档「{ChosenWorld.Name}」直传完成！", HintType.Green))
+                Catch ex As Exception
+                    SetSideChannelStatus($"发送存档失败：{ex.Message}")
+                    RunInUi(Sub() Hint($"发送存档失败：{ex.Message}", HintType.Red))
+                Finally
+                    Try
+                        If IO.File.Exists(TmpZip) Then IO.File.Delete(TmpZip)
+                    Catch
+                    End Try
+                End Try
+            End Sub, "Push Save To Host")
+        ElseIf OpIdx.Value = 2 Then
+            Dim FilePath = Dialogs.SelectFile("选择要发送给房主的大文件", False, filter:="所有文件 (*.*)|*.*").FirstOrDefault()
+            If String.IsNullOrEmpty(FilePath) OrElse Not IO.File.Exists(FilePath) Then Return
+            Dim FileName = IO.Path.GetFileName(FilePath)
+            SetSideChannelStatus($"正在计算「{FileName}」SHA-256 并请求房主确认…")
+            RunInNewThread(
+            Sub()
+                Try
+                    EasyTierSideChannelCore.PushFileToHost(
+                        ClientControlPort, NetworkSecret, "file", FileName, FileName, FilePath, GetLinkUserName(),
+                        OnProgress:=Sub(DoneB, TotalB)
+                                        Dim Pct = If(TotalB > 0, Math.Min(100, CInt(DoneB * 100L \ TotalB)), 0)
+                                        SetSideChannelStatus($"正在向房主直传「{FileName}」：{Pct}% ({EasyTierSideChannelCore.FormatByteSizeDisplay(DoneB)} / {EasyTierSideChannelCore.FormatByteSizeDisplay(TotalB)})")
+                                    End Sub)
+                    SetSideChannelStatus($"已将文件「{FileName}」送达房主并完成校验 ✓")
+                    RunInUi(Sub() Hint($"文件「{FileName}」直传完成！", HintType.Green))
+                Catch ex As Exception
+                    SetSideChannelStatus($"发送文件失败：{ex.Message}")
+                    RunInUi(Sub() Hint($"发送文件失败：{ex.Message}", HintType.Red))
+                End Try
+            End Sub, "Push File To Host")
+        End If
     End Sub
 
 #End Region
