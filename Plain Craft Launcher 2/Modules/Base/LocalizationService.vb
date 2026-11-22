@@ -1,6 +1,7 @@
 Imports System.Collections
 Imports System.Collections.Generic
 Imports System.Globalization
+Imports System.Linq
 Imports System.Runtime.CompilerServices
 Imports System.Threading
 Imports System.Windows
@@ -18,6 +19,7 @@ Public Module LocalizationService
 
     Private ReadOnly TrackedMap As New ConditionalWeakTable(Of DependencyObject, Dictionary(Of String, TrackedPropState))()
     Private HooksInitialized As Integer = 0
+    Public EverTranslated As Boolean = False
 
     Public Sub InitLocalizationHooks()
         If Interlocked.Exchange(HooksInitialized, 1) = 1 Then Return
@@ -111,14 +113,35 @@ Public Module LocalizationService
                 FrmToolsLeft, FrmToolsToolbox, FrmToolsSkin3D, FrmToolsServer, FrmToolsHotkeys, FrmToolsResourceMerge, FrmToolsServerPing
             }
             For Each P In Pages
-                If P IsNot Nothing Then TranslateElement(P)
+                If P IsNot Nothing Then
+                    Try
+                        TranslateElement(P)
+                    Catch ex As Exception
+                        Logger.Warn(ex, "切换语言翻译页面失败")
+                    End Try
+                End If
             Next
 
             If Application.Current IsNot Nothing Then
-                For Each Win As Window In Application.Current.Windows
-                    If Win IsNot Nothing AndAlso Win IsNot FrmMain Then TranslateElement(Win)
+                For Each Win As Window In Application.Current.Windows.Cast(Of Window)().ToArray()
+                    If Win IsNot Nothing AndAlso Win IsNot FrmMain Then
+                        Try
+                            TranslateElement(Win)
+                        Catch
+                        End Try
+                    End If
                 Next
             End If
+
+            '同步动态构建文本的页面
+            Try
+                If FrmFriends IsNot Nothing AndAlso FrmFriends.IsLoaded Then FrmFriends.RefreshLanguageUi()
+            Catch
+            End Try
+            Try
+                If FrmLinkMain IsNot Nothing AndAlso FrmLinkMain.IsLoaded Then FrmLinkMain.RefreshLanguageUi()
+            Catch
+            End Try
 
             '刷新设置搜索框结果
             Try
@@ -135,6 +158,7 @@ Public Module LocalizationService
 
     Public Sub TranslateElement(Root As DependencyObject)
         If Root Is Nothing Then Return
+        If LocalizationCore.IsEnglishActive() Then EverTranslated = True
         Dim Visited As New HashSet(Of Object)()
         TranslateRecursive(Root, Visited)
     End Sub
@@ -163,7 +187,7 @@ Public Module LocalizationService
             ApplyTrackedProp(Item, "Title", Item.Title, Sub(v) Item.Title = v)
             ApplyTrackedProp(Item, "Info", Item.Info, Sub(v) Item.Info = v)
             If Item.Buttons IsNot Nothing Then
-                For Each BtnObj In Item.Buttons
+                For Each BtnObj In Item.Buttons.Cast(Of Object)().ToArray()
                     Dim DepBtn = TryCast(BtnObj, DependencyObject)
                     If DepBtn IsNot Nothing Then TranslateRecursive(DepBtn, Visited)
                 Next
@@ -212,7 +236,7 @@ Public Module LocalizationService
         ElseIf TypeOf Node Is MyComboBox Then
             Dim Cmb = DirectCast(Node, MyComboBox)
             ApplyTrackedProp(Cmb, "HintText", Cmb.HintText, Sub(v) Cmb.HintText = v)
-            For Each SubItem In Cmb.Items
+            For Each SubItem In Cmb.Items.Cast(Of Object)().ToArray()
                 Dim DepItem = TryCast(SubItem, DependencyObject)
                 If DepItem IsNot Nothing Then TranslateRecursive(DepItem, Visited)
             Next
@@ -242,7 +266,8 @@ Public Module LocalizationService
         ElseIf TypeOf Node Is TextBlock Then
             Dim Tb = DirectCast(Node, TextBlock)
             If Tb.Inlines IsNot Nothing AndAlso Tb.Inlines.Count > 1 Then
-                For Each Inl In Tb.Inlines
+                Dim InlinesCopy = Tb.Inlines.Cast(Of Inline)().ToArray()
+                For Each Inl In InlinesCopy
                     If TypeOf Inl Is Run Then
                         Dim R = DirectCast(Inl, Run)
                         ApplyTrackedProp(R, "Text", R.Text, Sub(v) R.Text = v)
@@ -260,7 +285,7 @@ Public Module LocalizationService
 
         If IsLeafComposite Then Return
 
-        For Each Child In LogicalTreeHelper.GetChildren(Node)
+        For Each Child In LogicalTreeHelper.GetChildren(Node).Cast(Of Object)().ToArray()
             Dim DepChild = TryCast(Child, DependencyObject)
             If DepChild IsNot Nothing Then TranslateRecursive(DepChild, Visited)
         Next
@@ -274,12 +299,12 @@ Public Module LocalizationService
             If Dec.Child IsNot Nothing Then TranslateRecursive(Dec.Child, Visited)
         ElseIf TypeOf Node Is Panel Then
             Dim Pan = DirectCast(Node, Panel)
-            For Each Child As UIElement In Pan.Children
+            For Each Child As UIElement In Pan.Children.Cast(Of UIElement)().ToArray()
                 If Child IsNot Nothing Then TranslateRecursive(Child, Visited)
             Next
         ElseIf TypeOf Node Is ItemsControl Then
             Dim Ic = DirectCast(Node, ItemsControl)
-            For Each Item In Ic.Items
+            For Each Item In Ic.Items.Cast(Of Object)().ToArray()
                 Dim DepItem = TryCast(Item, DependencyObject)
                 If DepItem IsNot Nothing Then TranslateRecursive(DepItem, Visited)
             Next

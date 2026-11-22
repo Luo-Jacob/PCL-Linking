@@ -136,6 +136,51 @@ Public Module LocalizationCore
         M = Regex.Match(Text, "^好友\s*\(([^)]+)\)$")
         If M.Success Then Return $"Friends ({M.Groups(1).Value})"
 
+        M = Regex.Match(Text, "^(\d+)\s*好友$")
+        If M.Success Then Return $"{M.Groups(1).Value} Friends"
+
+        M = Regex.Match(Text, "^(\d+)\s*群\s*·\s*(\d+)\s*好友$")
+        If M.Success Then Return $"{M.Groups(1).Value}G · {M.Groups(2).Value}F"
+
+        M = Regex.Match(Text, "^中继:\s*公共节点$")
+        If M.Success Then Return "Relay: Public"
+
+        M = Regex.Match(Text, "^中继:\s*(.+)$")
+        If M.Success Then Return $"Relay: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^当前中继：([^\s（]+)（每\s*(\d+)\s*秒后台拉取一次）$")
+        If M.Success Then Return $"Current relay: {M.Groups(1).Value} (polls every {M.Groups(2).Value}s)"
+
+        M = Regex.Match(Text, "^黑名单\s*\((\d+)\)$")
+        If M.Success Then Return $"Blocked ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^群号：([^\s·]+)\s*·\s*端到端加密群聊（切回即实时拉取）$")
+        If M.Success Then Return $"Group ID: {M.Groups(1).Value} · E2E Encrypted Group (syncs on open)"
+
+        M = Regex.Match(Text, "^好友\s*ID:\s*([^\s·]+)\s*·\s*(.+)$")
+        If M.Success Then Return $"Friend ID: {M.Groups(1).Value} · {TranslateText(M.Groups(2).Value)}"
+
+        M = Regex.Match(Text, "^节点：(.+?)\s*·\s*协议：(.+?)\s*·\s*(.+)$")
+        If M.Success Then Return $"Node: {TranslateText(M.Groups(1).Value.Trim())}  ·  Protocol: {TranslateText(M.Groups(2).Value.Trim())}  ·  {TranslateText(M.Groups(3).Value.Trim())}"
+
+        M = Regex.Match(Text, "^自定义节点\s*\((\d+)\s*个\)$")
+        If M.Success Then Return $"Custom Nodes ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^(\d+)\s*次$")
+        If M.Success Then Return $"{M.Groups(1).Value}x"
+
+        M = Regex.Match(Text, "^发送时间：(.+)$")
+        If M.Success Then Return $"Sent: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^发送失败：(.+)（点击重试）$")
+        If M.Success Then Return $"Send failed: {M.Groups(1).Value} (click to retry)"
+
+        M = Regex.Match(Text, "^大小：(.+?)\s*·\s*AES-256 端到端加密（中继暂存\s*3\s*小时）$")
+        If M.Success Then Return $"Size: {M.Groups(1).Value} · AES-256 E2E Encrypted (3h relay TTL)"
+
+        M = Regex.Match(Text, "^设置设置项时出错（(.+)）$")
+        If M.Success Then Return $"Failed to apply setting ({M.Groups(1).Value})"
+
         M = Regex.Match(Text, "^白名单列表\s*\((\d+)\s*人\)$")
         If M.Success Then Return $"Whitelist ({M.Groups(1).Value})"
 

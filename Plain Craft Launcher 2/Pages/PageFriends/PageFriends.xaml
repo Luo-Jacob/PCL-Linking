@@ -7,7 +7,7 @@
     mc:Ignorable="d" x:Class="PageFriends" PanScroll="PanBack">
     <Grid Margin="22,12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="336" />
             <ColumnDefinition Width="1*" />
         </Grid.ColumnDefinitions>
 
@@ -84,11 +84,11 @@
             <local:MyCard Grid.Row="1" Title="好友与群" CornerRadius="6">
                 <Grid>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,12,0">
-                        <TextBlock x:Name="LabFriendCount" Text="0 人" Foreground="{DynamicResource ColorBrushGray3}" FontSize="11.5"
-                                   VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <local:MyButton x:Name="BtnBroadcastInvite" Text="群发邀请" Height="24" Padding="9,0" Margin="0,0,6,0"
+                        <TextBlock x:Name="LabFriendCount" Text="0 好友" Foreground="{DynamicResource ColorBrushGray3}" FontSize="11.5"
+                                   VerticalAlignment="Center" Margin="0,0,7,0" />
+                        <local:MyButton x:Name="BtnBroadcastInvite" Text="群发邀请" Height="24" Padding="8,0" Margin="0,0,5,0"
                                         ToolTip="将当前创建的联机房间邀请一键群发给好友列表中的所有好友" />
-                        <local:MyButton x:Name="BtnAddFriend" Text="+ 添加" Height="24" Padding="10,0" ColorType="Highlight" />
+                        <local:MyButton x:Name="BtnAddFriend" Text="+ 添加" Height="24" Padding="9,0" ColorType="Highlight" />
                     </StackPanel>
 
                     <Grid Margin="12,38,12,12">
@@ -101,12 +101,12 @@
                             <local:MyScrollViewer x:Name="PanFriendsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <StackPanel x:Name="PanFriends" Margin="0,2" />
                             </local:MyScrollViewer>
-                            <StackPanel x:Name="PanEmptyFriends" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                            <StackPanel x:Name="PanEmptyFriends" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,2" IsHitTestVisible="False">
                                 <Path Data="M16,11C17.66,11 19,9.66 19,8C19,6.34 17.66,5 16,5C14.34,5 13,6.34 13,8C13,9.66 14.34,11 16,11M8,11C9.66,11 11,9.66 11,8C11,6.34 9.66,5 8,5C6.34,5 5,6.34 5,8C5,9.66 6.34,11 8,11M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M16,13C15.71,13 15.38,13.02 15.03,13.05C16.19,13.89 17,15.02 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13Z"
-                                      Fill="{DynamicResource ColorBrushGray4}" Width="30" Height="30" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.6" />
-                                <TextBlock Text="还没有好友或群聊" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource ColorBrushGray3}"
-                                           HorizontalAlignment="Center" Margin="0,8,0,3" />
-                                <TextBlock Text="点击右上角「+ 添加」加好友、入群或建群" FontSize="11.5" Foreground="{DynamicResource ColorBrushGray4}"
+                                      Fill="{DynamicResource ColorBrushGray4}" Width="24" Height="24" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.6" />
+                                <TextBlock Text="还没有好友或群聊" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource ColorBrushGray3}"
+                                           HorizontalAlignment="Center" Margin="0,6,0,2" />
+                                <TextBlock Text="点击右上角「+ 添加」加好友、入群或建群" FontSize="11" LineHeight="15" Foreground="{DynamicResource ColorBrushGray4}"
                                            HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
                             </StackPanel>
                         </Grid>
@@ -126,9 +126,9 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" x:Name="LabRelay" Text="中继: ntfy.sh" Foreground="{DynamicResource ColorBrushGray3}"
                                            FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,6,0" />
-                                <local:MyButton Grid.Column="1" x:Name="BtnFriendAgreement" Text="协议" Height="24" Padding="8,0" Margin="0,0,6,0" ToolTip="查看好友服务使用协议" />
-                                <local:MyButton Grid.Column="2" x:Name="BtnRelay" Text="中继" Height="24" Padding="8,0" />
-                                <local:MyButton Grid.Column="3" x:Name="BtnUnblock" Text="黑名单" Height="24" Padding="8,0" Margin="6,0,0,0" />
+                                <local:MyButton Grid.Column="1" x:Name="BtnFriendAgreement" Text="使用协议" Height="24" Padding="7,0" Margin="0,0,5,0" ToolTip="查看好友服务使用协议" />
+                                <local:MyButton Grid.Column="2" x:Name="BtnRelay" Text="中继" Height="24" Padding="7,0" />
+                                <local:MyButton Grid.Column="3" x:Name="BtnUnblock" Text="黑名单" Height="24" Padding="7,0" Margin="5,0,0,0" />
                             </Grid>
                         </Grid>
                     </Grid>

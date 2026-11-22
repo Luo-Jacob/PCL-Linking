@@ -55,6 +55,11 @@
         RenderMessages(ForceScroll:=ForceScroll)
     End Sub
 
+    Public Sub RefreshLanguageUi()
+        LocalizationService.TranslateElement(Me)
+        RefreshAll(ForceScroll:=False)
+    End Sub
+
 #Region "名片与状态"
 
     Private Sub RefreshCard()
@@ -66,11 +71,11 @@
 
         Dim RelayRaw = ModFriends.RelayUrl()
         Dim RelayHost = RelayRaw.Replace("https://", "").Replace("http://", "")
-        LabRelay.Text = If(RelayHost = "ntfy.sh", "中继: 公共节点", $"中继: {RelayHost}")
-        LabRelay.ToolTip = $"当前中继：{RelayRaw}（每 {D.PollSeconds} 秒后台拉取一次）"
+        LabRelay.Text = LocalizationCore.TranslateText(If(RelayHost = "ntfy.sh", "中继: 公共节点", $"中继: {RelayHost}"))
+        LabRelay.ToolTip = LocalizationCore.TranslateText($"当前中继：{RelayRaw}（每 {D.PollSeconds} 秒后台拉取一次）")
 
         Dim BlockedCount = D.Blocked.Count
-        BtnUnblock.Text = If(BlockedCount > 0, $"黑名单 ({BlockedCount})", "黑名单")
+        BtnUnblock.Text = LocalizationCore.TranslateText(If(BlockedCount > 0, $"黑名单 ({BlockedCount})", "黑名单"))
     End Sub
 
     Private Sub LabMyId_Click(sender As Object, e As MouseButtonEventArgs)
@@ -97,14 +102,14 @@
 
     Private Shared Function FormatMsgPreview(Msg As ModFriends.FriendMessage, DefaultId As String, IsGroup As Boolean) As String
         If Msg Is Nothing Then Return $"ID: {DefaultId}"
-        Dim Prefix = If(Msg.FromMe, "我: ", If(IsGroup AndAlso Not String.IsNullOrWhiteSpace(Msg.SenderName), Msg.SenderName & ": ", ""))
-        If Msg.SendFailed Then Prefix = "[失败] " & Prefix
+        Dim Prefix = If(Msg.FromMe, LocalizationCore.TranslateText("我: "), If(IsGroup AndAlso Not String.IsNullOrWhiteSpace(Msg.SenderName), Msg.SenderName & ": ", ""))
+        If Msg.SendFailed Then Prefix = LocalizationCore.TranslateText("[失败] ") & Prefix
         Select Case Msg.Kind
-            Case "invite" : Return Prefix & "[联机邀请]"
-            Case "modsync" : Return Prefix & "[Mod 清单]"
-            Case "file" : Return Prefix & $"[文件] {Msg.FileName}"
-            Case "group_invite" : Return Prefix & $"[群邀请] {Msg.GroupInviteName}"
-            Case "inst_sync" : Return Prefix & $"[实例同步] {Msg.SyncChannel}"
+            Case "invite" : Return Prefix & LocalizationCore.TranslateText("[联机邀请]")
+            Case "modsync" : Return Prefix & LocalizationCore.TranslateText("[Mod 清单]")
+            Case "file" : Return Prefix & LocalizationCore.TranslateText("[文件] ") & Msg.FileName
+            Case "group_invite" : Return Prefix & LocalizationCore.TranslateText("[群邀请] ") & Msg.GroupInviteName
+            Case "inst_sync" : Return Prefix & LocalizationCore.TranslateText("[实例同步] ") & Msg.SyncChannel
             Case Else
                 Return Prefix & If(Msg.Text, "").Replace(vbCr, " ").Replace(vbLf, " ").Trim()
         End Select
@@ -112,7 +117,7 @@
 
     Private Sub RefreshFriends()
         Dim D = ModFriends.GetData()
-        LabFriendCount.Text = If(D.Groups.Any(), $"{D.Groups.Count} 群 · {D.Friends.Count} 人", $"{D.Friends.Count} 人")
+        LabFriendCount.Text = LocalizationCore.TranslateText(If(D.Groups.Any(), $"{D.Groups.Count} 群 · {D.Friends.Count} 好友", $"{D.Friends.Count} 好友"))
 
         Dim HasValidSelection = (CurrentFriendId <> "" AndAlso
             ((CurrentIsGroup AndAlso D.Groups.Any(Function(g) String.Equals(g.Id, CurrentFriendId, StringComparison.OrdinalIgnoreCase))) OrElse
@@ -290,8 +295,8 @@
     Private Sub UpdateChatHeader()
         If CurrentFriendId = "" Then
             AvatarChatBorder.Visibility = Visibility.Collapsed
-            LabChatTitle.Text = "选择一位好友或群聊开始沟通"
-            LabChatSubTitle.Text = "点击左侧列表，或点击「+ 添加」添加好友 / 加入或创建群聊"
+            LabChatTitle.Text = LocalizationCore.TranslateText("选择一位好友或群聊开始沟通")
+            LabChatSubTitle.Text = LocalizationCore.TranslateText("点击左侧列表，或点击「+ 添加」添加好友 / 加入或创建群聊")
             PanChatActions.Visibility = Visibility.Collapsed
             BtnSendFile.IsEnabled = False
             TextChatInput.IsEnabled = False
@@ -307,9 +312,9 @@
                 Return
             End If
             AvatarChatBorder.Visibility = Visibility.Visible
-            LabChatAvatar.Text = "群"
+            LabChatAvatar.Text = LocalizationCore.TranslateText("群")
             LabChatTitle.Text = G.DisplayName
-            LabChatSubTitle.Text = $"群号：{G.Id} · 端到端加密群聊（切回即实时拉取）"
+            LabChatSubTitle.Text = LocalizationCore.TranslateText($"群号：{G.Id} · 端到端加密群聊（切回即实时拉取）")
             PanChatActions.Visibility = Visibility.Visible
             BtnRemark.Visibility = Visibility.Collapsed
             BtnRemoveFriend.Visibility = Visibility.Collapsed
@@ -328,7 +333,7 @@
             AvatarChatBorder.Visibility = Visibility.Visible
             LabChatAvatar.Text = DisplayTitle.Substring(0, 1).ToUpperInvariant()
             LabChatTitle.Text = DisplayTitle
-            LabChatSubTitle.Text = $"好友 ID: {F.Id} · {If(F.VerifiedUtc > 0, "✓ 已验证双向互通 · 端到端加密", "端到端加密 · 等待对方上线完成握手")}"
+            LabChatSubTitle.Text = LocalizationCore.TranslateText($"好友 ID: {F.Id} · {If(F.VerifiedUtc > 0, "✓ 已验证双向互通 · 端到端加密", "端到端加密 · 等待对方上线完成握手")}")
             PanChatActions.Visibility = Visibility.Visible
             BtnRemark.Visibility = Visibility.Visible
             BtnRemoveFriend.Visibility = Visibility.Visible
@@ -350,18 +355,18 @@
         PanMessages.Children.Clear()
 
         If CurrentFriendId = "" Then
-            LabEmptyHeading.Text = "选择一位好友或群聊开始沟通"
-            LabEmptySub.Text = "支持私聊与多人群聊、端到端加密文件传输（<= 10 MB）、启动 PCL Linking 自动实例同步与联机邀请。"
+            LabEmptyHeading.Text = LocalizationCore.TranslateText("选择一位好友或群聊开始沟通")
+            LabEmptySub.Text = LocalizationCore.TranslateText("支持私聊与多人群聊、端到端加密文件传输（<= 10 MB）、启动 PCL Linking 自动实例同步与联机邀请。")
             PanNoChat.Visibility = Visibility.Visible
             Return
         End If
 
         Dim List = If(CurrentIsGroup, ModFriends.GetGroupMessages(CurrentFriendId), ModFriends.GetMessages(CurrentFriendId))
         If List.Count = 0 Then
-            LabEmptyHeading.Text = "还没有聊天记录"
-            LabEmptySub.Text = If(CurrentIsGroup,
+            LabEmptyHeading.Text = LocalizationCore.TranslateText("还没有聊天记录")
+            LabEmptySub.Text = LocalizationCore.TranslateText(If(CurrentIsGroup,
                 "发一句欢迎语，点击右上角「拉好友」邀请好友入群，或点击「实例同步」发布同步频道。",
-                "在下方输入消息（支持直接拖入文件/Ctrl+V 截图），或使用「发联机邀请」「实例同步」。")
+                "在下方输入消息（支持直接拖入文件/Ctrl+V 截图），或使用「发联机邀请」「实例同步」。"))
             PanNoChat.Visibility = Visibility.Visible
             Return
         End If
@@ -498,7 +503,7 @@
                 Dim Bar As New WrapPanel With {.Margin = New Thickness(0, 8, 0, 0)}
                 Dim CaptureCode = ExtractedCode, CaptureVerify = ExtractedVerify
                 Dim BtnJoinQuick As New MyButton With {
-                    .Text = "一键加入联机房间",
+                    .Text = LocalizationCore.TranslateText("一键加入联机房间"),
                     .Height = 26,
                     .Padding = New Thickness(10, 0, 10, 0),
                     .Margin = New Thickness(0, 0, 6, 2),
@@ -508,7 +513,7 @@
                 Bar.Children.Add(BtnJoinQuick)
 
                 Dim BtnJoinPlay As New MyButton With {
-                    .Text = "加入并直连游戏",
+                    .Text = LocalizationCore.TranslateText("加入并直连游戏"),
                     .Height = 26,
                     .Padding = New Thickness(10, 0, 10, 0),
                     .Margin = New Thickness(0, 0, 0, 2)
@@ -518,7 +523,7 @@
                 Sp.Children.Add(Bar)
             Else
                 Dim SentHint As New TextBlock With {
-                    .Text = "已附带联机邀请 · 好友聊天框将显示一键加入按钮",
+                    .Text = LocalizationCore.TranslateText("已附带联机邀请 · 好友聊天框将显示一键加入按钮"),
                     .FontSize = 11,
                     .Margin = New Thickness(0, 5, 0, 0)
                 }
@@ -529,7 +534,7 @@
         Else
             Bubble.Child = Txt
         End If
-        Bubble.ToolTip = $"发送时间：{M.TimeText}"
+        Bubble.ToolTip = LocalizationCore.TranslateText($"发送时间：{M.TimeText}")
 
         Dim BtnCopy As New MyIconButton With {
             .Width = 22,
@@ -537,7 +542,7 @@
             .Theme = MyIconButton.Themes.Black,
             .LogoScale = 0.78,
             .Logo = LogoCopyMessage,
-            .ToolTip = "复制消息",
+            .ToolTip = LocalizationCore.TranslateText("复制消息"),
             .VerticalAlignment = VerticalAlignment.Center,
             .Margin = If(M.FromMe, New Thickness(0, 0, 6, 0), New Thickness(6, 0, 0, 0)),
             .Opacity = 0.35
@@ -568,13 +573,13 @@
 
     Private Function BuildRetryButton(M As ModFriends.FriendMessage) As MyButton
         Dim BtnRetry As New MyButton With {
-            .Text = "⚠ 重发",
+            .Text = LocalizationCore.TranslateText("⚠ 重发"),
             .Height = 24,
             .Padding = New Thickness(8, 0, 8, 0),
             .Margin = New Thickness(0, 0, 6, 0),
             .ColorType = MyButton.ColorState.Red,
             .VerticalAlignment = VerticalAlignment.Center,
-            .ToolTip = If(String.IsNullOrWhiteSpace(M.SendError), "点击重新发送此消息", $"发送失败：{M.SendError}（点击重试）")
+            .ToolTip = LocalizationCore.TranslateText(If(String.IsNullOrWhiteSpace(M.SendError), "点击重新发送此消息", $"发送失败：{M.SendError}（点击重试）"))
         }
         Dim MsgId = M.Id, IsGrp = M.IsGroup
         AddHandler BtnRetry.Click,
@@ -613,19 +618,19 @@
         Dim Header As New StackPanel With {.Orientation = Orientation.Horizontal, .Margin = New Thickness(0, 0, 0, 4)}
         Dim TagBadge As New Border With {.CornerRadius = New CornerRadius(4), .Padding = New Thickness(6, 2, 6, 2), .Margin = New Thickness(0, 0, 7, 0)}
         TagBadge.SetResourceReference(Border.BackgroundProperty, "ColorBrush3")
-        TagBadge.Child = New TextBlock With {.Text = "加密文件", .Foreground = Brushes.White, .FontSize = 10.5, .FontWeight = FontWeights.Bold}
+        TagBadge.Child = New TextBlock With {.Text = LocalizationCore.TranslateText("加密文件"), .Foreground = Brushes.White, .FontSize = 10.5, .FontWeight = FontWeights.Bold}
         Header.Children.Add(TagBadge)
-        Dim NameTb As New TextBlock With {.Text = If(String.IsNullOrWhiteSpace(M.FileName), "未知文件", M.FileName), .FontWeight = FontWeights.Bold, .FontSize = 13, .TextTrimming = TextTrimming.CharacterEllipsis, .MaxWidth = 200}
+        Dim NameTb As New TextBlock With {.Text = If(String.IsNullOrWhiteSpace(M.FileName), LocalizationCore.TranslateText("未知文件"), M.FileName), .FontWeight = FontWeights.Bold, .FontSize = 13, .TextTrimming = TextTrimming.CharacterEllipsis, .MaxWidth = 200}
         NameTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1")
         Header.Children.Add(NameTb)
         Stack.Children.Add(Header)
 
-        Dim DescTb As New TextBlock With {.Text = $"大小：{SizeText} · AES-256 端到端加密（中继暂存 3 小时）", .FontSize = 11.5, .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(0, 2, 0, 8)}
+        Dim DescTb As New TextBlock With {.Text = LocalizationCore.TranslateText($"大小：{SizeText} · AES-256 端到端加密（中继暂存 3 小时）"), .FontSize = 11.5, .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(0, 2, 0, 8)}
         DescTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3")
         Stack.Children.Add(DescTb)
 
         If Not String.IsNullOrWhiteSpace(M.FileUrl) Then
-            Dim BtnSave As New MyButton With {.Text = "解密并下载保存", .Height = 28, .Padding = New Thickness(12, 0, 12, 0), .ColorType = MyButton.ColorState.Highlight, .HorizontalAlignment = HorizontalAlignment.Left}
+            Dim BtnSave As New MyButton With {.Text = LocalizationCore.TranslateText("解密并下载保存"), .Height = 28, .Padding = New Thickness(12, 0, 12, 0), .ColorType = MyButton.ColorState.Highlight, .HorizontalAlignment = HorizontalAlignment.Left}
             Dim CapUrl = M.FileUrl, CapKey = M.FileKey, CapSha = M.FileSha256, CapName = M.FileName
             AddHandler BtnSave.Click,
                 Sub()
@@ -637,7 +642,7 @@
                     If String.IsNullOrWhiteSpace(SafeFileName) OrElse SafeFileName = "." OrElse SafeFileName = ".." Then SafeFileName = "pcl_linking_file.bin"
                     Dim Dlg As New Microsoft.Win32.SaveFileDialog With {
                         .FileName = SafeFileName,
-                        .Title = "保存解密后的好友文件"
+                        .Title = LocalizationCore.TranslateText("保存解密后的好友文件")
                     }
                     Try
                         If Dlg.ShowDialog() <> True Then Return
@@ -647,7 +652,7 @@
                     End Try
                     Dim SavePath = Dlg.FileName
                     BtnSave.IsEnabled = False
-                    BtnSave.Text = "解密下载中…"
+                    BtnSave.Text = LocalizationCore.TranslateText("解密下载中…")
                     RunInNewThread(
                         Sub()
                             Dim PlainBytes As Byte() = Nothing
@@ -662,7 +667,7 @@
                             RunInUi(
                                 Sub()
                                     BtnSave.IsEnabled = True
-                                    BtnSave.Text = "解密并下载保存"
+                                    BtnSave.Text = LocalizationCore.TranslateText("解密并下载保存")
                                     If Err IsNot Nothing Then
                                         Hint(Err, HintType.Red)
                                     Else

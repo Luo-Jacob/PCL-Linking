@@ -173,6 +173,13 @@ Public Class MyPageRight
     Public Sub PageOnEnter()
         Logger.Trace("已触发 PageOnEnter")
         RaiseEvent PageEnter()
+        Try
+            If LocalizationCore.IsEnglishActive() OrElse LocalizationService.EverTranslated Then
+                LocalizationService.TranslateElement(Me)
+            End If
+        Catch ex As Exception
+            Logger.Warn(ex, "切换页面同步语言失败")
+        End Try
         Select Case PageState
             Case PageStates.Empty
                 If PageLoader Is Nothing OrElse PageLoader.State = LoadState.Finished OrElse PageLoader.State = LoadState.Waiting OrElse PageLoader.State = LoadState.Canceled Then

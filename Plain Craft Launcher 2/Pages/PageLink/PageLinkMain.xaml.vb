@@ -396,6 +396,12 @@ Public Class PageLinkMain
         Return Code
     End Function
 
+    Public Sub RefreshLanguageUi()
+        LocalizationService.TranslateElement(Me)
+        RefreshLinkOverviewStatus()
+        RefreshLinkBookmarksUi()
+    End Sub
+
     '自定义节点：公共节点随时可能失效，给用户留一个应急入口
     '（原 PageSetupLink 设置页已随导航精简删除，LinkCustomPeer 因此没有 UI，这里补上）
     Private Sub RefreshLinkOverviewStatus()
@@ -405,7 +411,7 @@ Public Class PageLinkMain
         Dim NodeText = If(CustomList.Any(), $"自定义节点 ({CustomList.Length} 个)", If(Settings.Get(Of Boolean)("LinkPeerPool"), "社区节点池（自动择优）", "内置节点"))
         Dim ProtoText = If(Settings.Get(Of Integer)("LinkProtocol") = 1, "UDP 优先", "TCP 优先")
         Dim ReconnectText = If(Settings.Get(Of Boolean)("LinkAutoReconnect"), "断线自动重连", "手动重连")
-        LabLobbyNetworkStatus.Text = $"节点：{NodeText}  ·  协议：{ProtoText}  ·  {ReconnectText}"
+        LabLobbyNetworkStatus.Text = LocalizationCore.TranslateText($"节点：{NodeText}  ·  协议：{ProtoText}  ·  {ReconnectText}")
     End Sub
 
     Private Sub BtnOpenLinkSetup_Click() Handles BtnOpenLinkSetup.Click
@@ -2075,9 +2081,10 @@ Public Class PageLinkMain
             InfoStack.Children.Add(TitleTb)
 
             Dim MaskedCode = If(LocalBm.InviteCode.Length > 13, LocalBm.InviteCode.Substring(0, 13) & "…", LocalBm.InviteCode)
-            Dim PwTag = If(String.IsNullOrEmpty(LocalBm.VerifyCode), "无密码", "已保存密码")
+            Dim PwTag = LocalizationCore.TranslateText(If(String.IsNullOrEmpty(LocalBm.VerifyCode), "无密码", "已保存密码"))
+            Dim UsesSuffix = LocalizationCore.TranslateText($"{LocalBm.UseCount}次")
             Dim SubTb As New TextBlock With {
-                .Text = $"{MaskedCode} · {PwTag} · {LocalBm.LastUsedUtc.ToLocalTime():MM-dd HH:mm} ({LocalBm.UseCount}次)",
+                .Text = $"{MaskedCode} · {PwTag} · {LocalBm.LastUsedUtc.ToLocalTime():MM-dd HH:mm} ({UsesSuffix})",
                 .FontSize = 11,
                 .TextTrimming = TextTrimming.CharacterEllipsis
             }
@@ -2088,7 +2095,7 @@ Public Class PageLinkMain
 
             Dim ActPanel As New StackPanel With {.Orientation = Orientation.Horizontal, .VerticalAlignment = VerticalAlignment.Center}
             Dim BtnJoin As New MyButton With {
-                .Text = "加入",
+                .Text = LocalizationCore.TranslateText("加入"),
                 .Height = 24,
                 .Padding = New Thickness(9, 0, 9, 0),
                 .ColorType = MyButton.ColorState.Highlight,
@@ -2107,7 +2114,7 @@ Public Class PageLinkMain
             ActPanel.Children.Add(BtnJoin)
 
             Dim BtnFav As New MyButton With {
-                .Text = If(LocalBm.IsFavorite, "取消收藏", "收藏"),
+                .Text = LocalizationCore.TranslateText(If(LocalBm.IsFavorite, "取消收藏", "收藏")),
                 .Height = 24,
                 .Padding = New Thickness(8, 0, 8, 0),
                 .Margin = New Thickness(0, 0, 5, 0)
@@ -2120,7 +2127,7 @@ Public Class PageLinkMain
             ActPanel.Children.Add(BtnFav)
 
             Dim BtnRename As New MyButton With {
-                .Text = "改名",
+                .Text = LocalizationCore.TranslateText("改名"),
                 .Height = 24,
                 .Padding = New Thickness(8, 0, 8, 0),
                 .Margin = New Thickness(0, 0, 5, 0)
@@ -2135,7 +2142,7 @@ Public Class PageLinkMain
             ActPanel.Children.Add(BtnRename)
 
             Dim BtnDel As New MyButton With {
-                .Text = "删除",
+                .Text = LocalizationCore.TranslateText("删除"),
                 .Height = 24,
                 .Padding = New Thickness(8, 0, 8, 0),
                 .ColorType = MyButton.ColorState.Red

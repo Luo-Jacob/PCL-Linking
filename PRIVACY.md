@@ -1,6 +1,6 @@
 # 隐私政策与本地数据处理说明（PCL Linking 修改版）
 
-最后更新日期：2026-11-22（对应版本 `v 1.1.1`）
+最后更新日期：2026-11-22（对应版本 `v 1.1.2`）
 
 **PCL Linking**（**Plain Craft Launcher - PCL Linking 修改版**，开源仓库：<https://github.com/Luo-Jacob/PCL-Linking>）为本地优先（Local-First）的桌面应用程序，**不包含任何内置遥测（Telemetry）、统计上报或广告 SDK**。仅在您主动使用对应联网功能时，才会与相关第三方或开源公共服务通信。
 
