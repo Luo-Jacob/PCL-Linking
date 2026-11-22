@@ -65,17 +65,17 @@
                     <local:MyCheckBox local:SettingService.Key="LinkAutoReconnect" x:Name="CheckAutoReconnect" Height="22" Margin="0,10,0,0"
                                       Text="联机意外断开时自动重连（最多重试 3 次）"
                                       ToolTip="若因网络波动或中继节点短暂失联导致隧道意外退出，将自动在 3 秒后重试重连，避免房主/玩家频繁掉线重建。" />
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
-                        <local:MyCheckBox local:SettingService.Key="LinkStickyRoom" x:Name="CheckStickyRoom" Height="22"
+                    <WrapPanel Margin="0,10,0,0" VerticalAlignment="Center">
+                        <local:MyCheckBox local:SettingService.Key="LinkStickyRoom" x:Name="CheckStickyRoom" Height="22" Margin="0,2,14,2"
                                           Text="固定房主房间码（重开房间保留相同邀请码与密码）"
                                           ToolTip="开启后，作为房主重开同一端口的联机房间时将尽量沿用上次生成的邀请码后缀与密码，方便车队好友从收藏夹长期直接重连。" />
-                        <local:MyButton x:Name="BtnResetStickyRoom" Text="重置固定码" Height="24" Padding="10,0" Margin="14,0,0,0" />
-                    </StackPanel>
+                        <local:MyButton x:Name="BtnResetStickyRoom" Text="重置固定码" Height="24" Padding="10,0" Margin="0,2,0,2" />
+                    </WrapPanel>
                     <local:MyHint Margin="0,12,0,0" Theme="Blue"
                                   Text="仅记住「加入」过的房间；开启「固定房主房间码」后，只要你的端口号不变，下次建房生成的邀请码也能长期保持不变。" />
                 </StackPanel>
             </local:MyCard>
-            <local:MyCard Margin="0,0,0,15" Title="高级设置" IsSwapped="True" CanSwap="True">
+            <local:MyCard Margin="0,0,0,15" Title="自定义节点与穿透端口" IsSwapped="False" CanSwap="True">
                 <Grid Margin="25,40,25,22">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -122,7 +122,7 @@
                 </Grid>
             </local:MyCard>
             <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
         </StackPanel>
     </local:MyScrollViewer>
 </local:MyPageRight>

@@ -173,6 +173,8 @@ Public Class ResourceProject
                     Types = ResourceTypes.ResourcePack
                 ElseIf Website.Contains("/shaders/") Then
                     Types = ResourceTypes.Shader
+                ElseIf Website.Contains("/bukkit-plugins/") OrElse Website.Contains("/plugins/") Then
+                    Types = ResourceTypes.Plugin
                 Else
                     Types = ResourceTypes.DataPack
                 End If
@@ -270,6 +272,22 @@ Public Class ResourceProject
                         Case 6946 : Tags.Add("Mod 相关")
                         Case 6951 : Tags.Add("科技")
                         Case 6953 : Tags.Add("实用")
+                            '服务端插件
+                        Case 115 : Tags.Add("管理")
+                        Case 116 : Tags.Add("防破坏")
+                        Case 117 : Tags.Add("聊天")
+                        Case 122 : Tags.Add("开发工具")
+                        Case 123 : Tags.Add("经济")
+                        Case 124 : Tags.Add("世界管理")
+                        Case 125 : Tags.Add("性能优化")
+                        Case 126 : Tags.Add("小游戏")
+                        Case 127 : Tags.Add("实用")
+                        Case 128 : Tags.Add("信息")
+                        Case 129 : Tags.Add("游戏机制")
+                        Case 130 : Tags.Add("网页管理")
+                        Case 131 : Tags.Add("世界生成")
+                        Case 132 : Tags.Add("冒险")
+                        Case 134 : Tags.Add("传送")
                     End Select
                 Next
 #End Region

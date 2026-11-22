@@ -78,7 +78,10 @@ Public Class PageLinkMain
         Try
             FrmLinkMain.PanSelect.Visibility = If(LinkState = LinkStates.Waiting, Visibility.Visible, Visibility.Collapsed)
             FrmLinkMain.PanFinish.Visibility = If(LinkState = LinkStates.Finished, Visibility.Visible, Visibility.Collapsed)
-            If LinkState = LinkStates.Waiting Then RefreshLinkBookmarksUi()
+            If LinkState = LinkStates.Waiting Then
+                RefreshLinkBookmarksUi()
+                RefreshLinkOverviewStatus()
+            End If
             '自动联机：记住上次加入的房间，进入本页时自动再连一次。
             '这里在动画回调里，不能弹窗也不能阻塞，所以只把加入请求丢到 UI 队列里排队执行。
             If LinkState = LinkStates.Waiting AndAlso Not IsAutoReconnecting AndAlso Not HasPendingNavigationAction AndAlso AutoJoinCode Is Nothing AndAlso AutoCreatePort <= 0 AndAlso Settings.Get(Of Boolean)("LinkAutoJoin") Then
@@ -393,17 +396,32 @@ Public Class PageLinkMain
 
     '自定义节点：公共节点随时可能失效，给用户留一个应急入口
     '（原 PageSetupLink 设置页已随导航精简删除，LinkCustomPeer 因此没有 UI，这里补上）
-    Private Sub BtnCustomPeer_Click() Handles BtnCustomPeer.MouseLeftButtonUp
+    Private Sub RefreshLinkOverviewStatus()
+        If LabLobbyNetworkStatus Is Nothing Then Return
+        Dim CustomRaw = If(Settings.Get(Of String)("LinkCustomPeer"), "").Trim()
+        Dim CustomList = CustomRaw.Split({","c, ";"c, vbCr(0), vbLf(0)}, StringSplitOptions.RemoveEmptyEntries)
+        Dim NodeText = If(CustomList.Any(), $"自定义节点 ({CustomList.Length} 个)", If(Settings.Get(Of Boolean)("LinkPeerPool"), "社区节点池（自动择优）", "内置节点"))
+        Dim ProtoText = If(Settings.Get(Of Integer)("LinkProtocol") = 1, "UDP 优先", "TCP 优先")
+        Dim ReconnectText = If(Settings.Get(Of Boolean)("LinkAutoReconnect"), "断线自动重连", "手动重连")
+        LabLobbyNetworkStatus.Text = $"节点：{NodeText}  ·  协议：{ProtoText}  ·  {ReconnectText}"
+    End Sub
+
+    Private Sub BtnOpenLinkSetup_Click() Handles BtnOpenLinkSetup.Click
+        FrmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupLink)
+    End Sub
+
+    Private Sub BtnCustomPeer_Click() Handles BtnCustomPeer.Click
         Dim Current As String = Settings.Get(Of String)("LinkCustomPeer")
         Dim Input As String = MyMsgBoxInput("自定义节点",
             $"每行一个节点地址，例如：{vbLQ}tcp://1.2.3.4:11010{vbRQ}。{vbCrLf}留空则使用内置公共节点。房主与所有加入者必须填写相同的节点。",
             DefaultInput:=Current, HintText:="节点地址")
         If Input Is Nothing Then Return
         Settings.Set("LinkCustomPeer", Input.Trim)
+        RefreshLinkOverviewStatus()
         Hint(If(Input.Trim = "", "已恢复使用内置公共节点。", "自定义节点已保存，下次联机时生效。"), HintType.Green)
     End Sub
 
-    Private Sub BtnTestPeers_Click() Handles BtnTestPeers.MouseLeftButtonUp
+    Private Sub BtnTestPeers_Click() Handles BtnTestPeers.Click
         Hint("正在并发测速内置与社区中继节点（约 1~2 秒）……", HintType.Blue)
         RunInNewThread(
         Sub()
@@ -422,18 +440,23 @@ Public Class PageLinkMain
                     If Fastest3.Any() Then
                         Dim Choice = MyMsgBox(Sb.ToString().TrimEnd(), "EasyTier 中继节点测速报告",
                                               "应用最快前 3 节点", "恢复默认节点池", "关闭")
-                        If Choice = 1 Then
-                            Settings.Set("LinkCustomPeer", String.Join("; ", Fastest3))
-                            Hint($"已将最快 {Fastest3.Count} 个节点写入自定义节点，注意房主与好友需使用相同中继节点！", HintType.Green)
-                        ElseIf Choice = 2 Then
-                            Settings.Set("LinkCustomPeer", "")
-                            Hint("已恢复使用默认「社区节点池 + 内置兜底」策略。", HintType.Green)
+                            If Choice = 1 Then
+                                Settings.Set("LinkCustomPeer", String.Join("; ", Fastest3))
+                                RefreshLinkOverviewStatus()
+                                Hint($"已将最快 {Fastest3.Count} 个节点写入自定义节点，注意房主与好友需使用相同中继节点！", HintType.Green)
+                            ElseIf Choice = 2 Then
+                                Settings.Set("LinkCustomPeer", "")
+                                RefreshLinkOverviewStatus()
+                                Hint("已恢复使用默认「社区节点池 + 内置兜底」策略。", HintType.Green)
+                            End If
+                        Else
+                            Dim Choice = MyMsgBox(Sb.ToString().TrimEnd() & vbCrLf & vbCrLf & "未能探测到可达的公共节点，请检查网络或在「自定义节点」填入自建节点。",
+                                                  "EasyTier 中继节点测速报告", "恢复默认节点池", "关闭", IsWarn:=True)
+                            If Choice = 1 Then
+                                Settings.Set("LinkCustomPeer", "")
+                                RefreshLinkOverviewStatus()
+                            End If
                         End If
-                    Else
-                        Dim Choice = MyMsgBox(Sb.ToString().TrimEnd() & vbCrLf & vbCrLf & "未能探测到可达的公共节点，请检查网络或在「自定义节点」填入自建节点。",
-                                              "EasyTier 中继节点测速报告", "恢复默认节点池", "关闭", IsWarn:=True)
-                        If Choice = 1 Then Settings.Set("LinkCustomPeer", "")
-                    End If
                 End Sub)
             Catch ex As Exception
                 Logger.Warn(ex, "节点测速失败")
@@ -442,7 +465,7 @@ Public Class PageLinkMain
         End Sub, "Link Peer Latency Test")
     End Sub
 
-    Private Sub BtnScanLanWorlds_Click() Handles BtnScanLanWorlds.MouseLeftButtonUp
+    Private Sub BtnScanLanWorlds_Click() Handles BtnScanLanWorlds.Click
         If LinkState <> LinkStates.Waiting Then Return
         Hint("正在扫描本机 Minecraft 局域网广播（4445 端口）与本地服务端……", HintType.Blue)
         RunInNewThread(
@@ -475,7 +498,7 @@ Public Class PageLinkMain
             End Sub, "Scan Local LAN Worlds")
     End Sub
 
-    Private Sub BtnQuickJoinClipboard_Click() Handles BtnQuickJoinClipboard.MouseLeftButtonUp
+    Private Sub BtnQuickJoinClipboard_Click() Handles BtnQuickJoinClipboard.Click
         If LinkState <> LinkStates.Waiting Then
             Hint("当前已在联机状态中，请先退出当前房间后再试。", HintType.Red)
             Return

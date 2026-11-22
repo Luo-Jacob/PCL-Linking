@@ -31,7 +31,7 @@
                             <ColumnDefinition Width="1*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="包描述" VerticalAlignment="Center" Margin="0,0,12,0" />
-                        <local:MyTextBox Grid.Column="1" x:Name="TextMergeDesc" Text="Merged by PCL Linking ResourcePack Merger" />
+                        <local:MyTextBox Grid.Column="1" x:Name="TextMergeDesc" Text="" HintText="可选" />
                         <TextBlock Grid.Column="3" Text="pack_format" VerticalAlignment="Center" Margin="0,0,12,0" />
                         <local:MyComboBox Grid.Column="4" x:Name="ComboPackFormat" IsEditable="True" IsTextSearchEnabled="False">
                             <local:MyComboBoxItem Content="75 (MC 26.x / 最新版)" Tag="75" />
@@ -61,7 +61,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
 
         </StackPanel>
     </local:MyScrollViewer>

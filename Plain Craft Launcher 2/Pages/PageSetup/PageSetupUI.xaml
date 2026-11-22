@@ -194,7 +194,7 @@
                         <local:MyRadioBox Text="读取本地文件" x:Name="RadioCustomType1" Height="22" local:SettingService.Key="UiCustomType" local:SettingService.Value="1" Grid.Column="2" />
                         <local:MyRadioBox Text="联网更新" x:Name="RadioCustomType2" Height="22" local:SettingService.Key="UiCustomType" local:SettingService.Value="2" Grid.Column="3" />
                     </Grid>
-                    <local:MyHint Margin="0,15,0,-4" Text="内容见 ModSetup" Theme="Blue" x:Name="HintCustom" />
+                    <local:MyHint Margin="0,15,0,-4" Text="可选择加载本地或远程自定义主页布局。" Theme="Blue" x:Name="HintCustom" />
                     <local:MyHint Margin="0,15,0,6" Text="请谨慎使用陌生人提供的主页，恶意代码可能会造成损害！" Theme="Yellow" x:Name="HintCustomWarn" 
                                   CanClose="True" RelativeSetup="HintCustomWarn" />
                     <WrapPanel x:Name="PanCustomLocal" Visibility="Collapsed" Margin="0,0,0,5">
@@ -258,7 +258,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
         </StackPanel>
     </local:MyScrollViewer>
 </local:MyPageRight>

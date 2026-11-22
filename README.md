@@ -1,4 +1,4 @@
-# PCL Linking (`v 1.0.1`)
+# PCL Linking (`v 1.0.2`)
 
 **PCL Linking**是基于 **龙腾猫跃 (LTCat)** 开源的 **Plain Craft Launcher (PCL) 2.14.0.0** 进行二次开发的非盈利 Minecraft 多人联机与实用工具增强分支。
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 核心功能模块（`v 1.0.1`）
+## 核心功能模块（`v 1.0.2`）
 
 ### 多人联机与社交增强
 

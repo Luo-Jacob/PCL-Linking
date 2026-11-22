@@ -6,15 +6,21 @@
     PanScroll="Content">
     <local:PageResource x:Name="Content" PageType="Plugin" TypeName="插件" TypeNameSpaced="插件">
         <local:MyComboBoxItem Content="全部" Tag="" IsSelected="True" />
-        <local:MyComboBoxItem Content="管理" Tag="/management" />
-        <local:MyComboBoxItem Content="经济" Tag="/economy" />
-        <local:MyComboBoxItem Content="世界管理" Tag="/world-management" />
-        <local:MyComboBoxItem Content="游戏机制" Tag="/game-mechanics" />
-        <local:MyComboBoxItem Content="聊天" Tag="/chat" />
-        <local:MyComboBoxItem Content="实用工具" Tag="/utility" />
-        <local:MyComboBoxItem Content="性能优化" Tag="/optimization" />
-        <local:MyComboBoxItem Content="小游戏" Tag="/minigame" />
-        <local:MyComboBoxItem Content="冒险" Tag="/adventure" />
+        <local:MyComboBoxItem Content="管理" Tag="115/management" />
+        <local:MyComboBoxItem Content="经济" Tag="123/economy" />
+        <local:MyComboBoxItem Content="世界管理" Tag="124/world-management" />
+        <local:MyComboBoxItem Content="游戏机制" Tag="129/game-mechanics" />
+        <local:MyComboBoxItem Content="聊天" Tag="117/chat" />
+        <local:MyComboBoxItem Content="实用工具" Tag="127/utility" />
+        <local:MyComboBoxItem Content="性能优化" Tag="125/optimization" />
+        <local:MyComboBoxItem Content="小游戏" Tag="126/minigame" />
+        <local:MyComboBoxItem Content="冒险" Tag="132/adventure" />
+        <local:MyComboBoxItem Content="防破坏" Tag="116/" />
+        <local:MyComboBoxItem Content="传送" Tag="134/" />
+        <local:MyComboBoxItem Content="世界生成" Tag="131/" />
+        <local:MyComboBoxItem Content="信息展示" Tag="128/" />
+        <local:MyComboBoxItem Content="开发与接口" Tag="122/" />
+        <local:MyComboBoxItem Content="网页管理" Tag="130/" />
         <local:MyComboBoxItem Content="装饰" Tag="/decoration" />
         <local:MyComboBoxItem Content="服务器社交" Tag="/social" />
         <local:MyComboBoxItem Content="支持库" Tag="/library" />

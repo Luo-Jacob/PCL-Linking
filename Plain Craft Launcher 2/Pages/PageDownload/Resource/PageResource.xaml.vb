@@ -130,7 +130,7 @@ Public Class PageResource
             .Tag = ComboSearchTag.SelectedItem.Tag
             .ModLoaders = If(PageType = ResourceTypes.Mod, Val(ComboSearchLoader.SelectedItem.Tag), ModLoaders.None)
             .PluginLoaders = If(PageType = ResourceTypes.Plugin AndAlso ComboPluginLoader.SelectedItem IsNot Nothing, CStr(CType(ComboPluginLoader.SelectedItem, MyComboBoxItem).Tag), "")
-            .Sources = If(PageType = ResourceTypes.Plugin, ResourcePlatforms.Modrinth, CType(Val(ComboSearchSource.SelectedItem.Tag), ResourcePlatforms))
+            .Sources = CType(Val(ComboSearchSource.SelectedItem.Tag), ResourcePlatforms)
         End With
         Return Request
     End Function
@@ -239,16 +239,6 @@ Public Class PageResource
     ''' </summary>
     Public Sub ApplyDefaultSourceFilter()
         If ComboSearchSource Is Nothing OrElse ComboSearchSource.Items.Count = 0 Then Return
-        If PageType = ResourceTypes.Plugin Then
-            For Each Item As MyComboBoxItem In ComboSearchSource.Items
-                If Val(Item.Tag) = 2 Then
-                    ComboSearchSource.SelectedItem = Item
-                    Exit For
-                End If
-            Next
-            ComboSearchSource.IsEnabled = False
-            Return
-        End If
         ComboSearchSource.IsEnabled = True
         Dim TargetTag As Integer = Settings.Get(Of Integer)("ToolDownloadResourceSource")
         For Each Item As MyComboBoxItem In ComboSearchSource.Items

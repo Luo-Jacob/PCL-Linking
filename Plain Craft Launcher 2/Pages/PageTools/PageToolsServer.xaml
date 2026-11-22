@@ -67,8 +67,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <local:MyTextBox Grid.Column="0" x:Name="TextServerDir" Margin="0,0,8,0"
-                                             HintText="留空将在点击生成时自动创建至 PCL Linking\Servers\核心-版本\" />
+                            <local:MyTextBox Grid.Column="0" x:Name="TextServerDir" Margin="0,0,8,0" HintText="" />
                             <local:MyButton Grid.Column="1" x:Name="BtnBrowseServerDir" Text="选择目录" MinWidth="88" Height="28" Padding="10,0" Margin="0,0,8,0" />
                             <local:MyButton Grid.Column="2" x:Name="BtnOpenServerDir" Text="打开目录" MinWidth="88" Height="28" Padding="10,0" />
                         </Grid>
@@ -121,7 +120,7 @@
                         <local:MyTextBox Grid.Row="2" Grid.Column="7" x:Name="TextJvmXms" Text="1024M" />
 
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="标语 MOTD" VerticalAlignment="Center" Margin="0,0,10,0" />
-                        <local:MyTextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="4" x:Name="TextPropMotd" Text="A PCL Linking Local Minecraft Server" />
+                        <local:MyTextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="4" x:Name="TextPropMotd" Text="" HintText="可选" />
                         <TextBlock Grid.Row="4" Grid.Column="6" Text="最大内存" VerticalAlignment="Center" Margin="0,0,10,0" />
                         <local:MyTextBox Grid.Row="4" Grid.Column="7" x:Name="TextJvmXmx" Text="4096M" />
                     </Grid>
@@ -255,7 +254,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.1 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.0.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
 
         </StackPanel>
     </local:MyScrollViewer>

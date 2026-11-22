@@ -21,7 +21,7 @@ Public Class ResourceSearcher
         ''' </summary>
         Public ReadOnly Property CanContinue As Boolean
             Get
-                If Tag.StartsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.CurseForge) OrElse Type = ResourceTypes.Plugin Then Storage.CurseForgeTotal = 0
+                If Tag.StartsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.CurseForge) Then Storage.CurseForgeTotal = 0
                 If Tag.EndsWithF("/") OrElse Not Sources.HasFlagF(ResourcePlatforms.Modrinth) Then Storage.ModrinthTotal = 0
                 If Storage.CurseForgeTotal = -1 OrElse Storage.ModrinthTotal = -1 Then Return True
                 Return Storage.CurseForgeOffset < Storage.CurseForgeTotal OrElse Storage.ModrinthOffset < Storage.ModrinthTotal
@@ -86,9 +86,11 @@ Public Class ResourceSearcher
                     Address += "&classId=6552"
                 Case ResourceTypes.ResourcePack
                     Address += "&classId=12"
+                Case ResourceTypes.Plugin
+                    Address += "&classId=5"
             End Select
             If Tag <> "" Then Address += "&categoryId=" & Tag.BeforeFirst("/")
-            If ModLoaders <> ModLoaders.None AndAlso Not IgnoreModLoaderFilter Then Address += "&modLoaderType=" & Resource.ToCurseForgeModLoaderType(ModLoaders.Flags.First)
+            If Type <> ResourceTypes.Plugin AndAlso ModLoaders <> ModLoaders.None AndAlso Not IgnoreModLoaderFilter Then Address += "&modLoaderType=" & Resource.ToCurseForgeModLoaderType(ModLoaders.Flags.First)
             If Not String.IsNullOrEmpty(GameVersion) Then Address += "&gameVersion=" & GameVersion
             If Not String.IsNullOrEmpty(SearchText) Then Address += "&searchFilter=" & StringUtils.UrlEscape(SearchText)
             If Storage.CurseForgeOffset > 0 Then Address += "&index=" & Storage.CurseForgeOffset
@@ -319,8 +321,7 @@ NextPage:
         Try
 
             'CurseForge 搜索
-            If Request.Type <> ResourceTypes.Plugin AndAlso
-               Request.Sources.HasFlagF(ResourcePlatforms.CurseForge) AndAlso
+            If Request.Sources.HasFlagF(ResourcePlatforms.CurseForge) AndAlso
                Not (Storage.CurseForgeTotal > -1 AndAlso Storage.CurseForgeTotal <= Storage.CurseForgeOffset) AndAlso '剩余的未显示的搜索结果不足
                (Not IsChineseSearch OrElse (IsChineseSearch AndAlso Not String.IsNullOrEmpty(CurseForgeAltSearchText))) Then '如果是中文搜索，就只在有对应搜索关键词的时候才继续
                 WorkThreads.Add(RunInNewThread(
