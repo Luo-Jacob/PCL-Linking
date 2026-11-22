@@ -1546,7 +1546,8 @@
 
     Public Shared Sub StartFriendModSyncDiff(HostManifest As ModFriends.ModSyncManifest,
                                              Optional SilentIfSynced As Boolean = False,
-                                             Optional OnStatusUpdate As Action(Of String) = Nothing)
+                                             Optional OnStatusUpdate As Action(Of String) = Nothing,
+                                             Optional P2pPullMod As Func(Of String, String, Boolean) = Nothing)
         If HostManifest Is Nothing OrElse (String.IsNullOrEmpty(HostManifest.Ver) AndAlso (HostManifest.Items Is Nothing OrElse Not HostManifest.Items.Any())) Then
             OnStatusUpdate?.Invoke("Mod 核对：房主端未选择游戏实例，已跳过比对")
             If Not SilentIfSynced Then RunInUi(Sub() Hint("房主端未选中任何游戏实例，暂无 Mod 清单可供对比！", HintType.Blue))
@@ -1573,7 +1574,8 @@
                     End If
                     Return
                 End If
-                OnStatusUpdate?.Invoke($"Mod 一致性：发现差异（{Diff.MissingDownloadable.Count + Diff.MismatchDownloadable.Count + Diff.DisabledMatch.Count} 项待同步）")
+                Dim P2pPendingCount = If(P2pPullMod IsNot Nothing, Diff.HostLocalOnly.Count + Diff.MismatchLocalOnly.Count, 0)
+                OnStatusUpdate?.Invoke($"Mod 一致性：发现差异（{Diff.MissingDownloadable.Count + Diff.MismatchDownloadable.Count + Diff.DisabledMatch.Count + P2pPendingCount} 项待同步）")
 
                 Dim Sb As New System.Text.StringBuilder()
                 Sb.AppendLine($"房主环境：{HostManifest.Ver} ({CType(HostManifest.Ldr, ModLoaders)}) · 共 {HostManifest.Items.Count} 个 Mod")
@@ -1604,7 +1606,10 @@
                     Sb.AppendLine()
                 End If
                 If Diff.MismatchLocalOnly.Any() Then
-                    Sb.AppendLine($"【同名但文件哈希不一致（无线上源，需手动替换）：{Diff.MismatchLocalOnly.Count} 个】")
+                    Dim LocalMismatchTitle = If(P2pPullMod IsNot Nothing,
+                        $"【同名但文件哈希不一致（可经虚网 P2P 覆盖对齐）：{Diff.MismatchLocalOnly.Count} 个】",
+                        $"【同名但文件哈希不一致（无线上源，需手动替换）：{Diff.MismatchLocalOnly.Count} 个】")
+                    Sb.AppendLine(LocalMismatchTitle)
                     For Each E In Diff.MismatchLocalOnly.Take(5) : Sb.AppendLine($"• {E.LocalMod.File.Name}") : Next
                     If Diff.MismatchLocalOnly.Count > 5 Then Sb.AppendLine($"……等共 {Diff.MismatchLocalOnly.Count} 个")
                     Sb.AppendLine()
@@ -1616,12 +1621,15 @@
                     Sb.AppendLine()
                 End If
                 If Diff.HostLocalOnly.Any() Then
-                    Sb.AppendLine($"【房主私有本地 Mod（无线上源，需手动传送）：{Diff.HostLocalOnly.Count} 个】")
+                    Dim HostLocalTitle = If(P2pPullMod IsNot Nothing,
+                        $"【房主私有本地 Mod（无线上源，支持虚网 P2P 直接拉取补齐）：{Diff.HostLocalOnly.Count} 个】",
+                        $"【房主私有本地 Mod（无线上源，需手动传送）：{Diff.HostLocalOnly.Count} 个】")
+                    Sb.AppendLine(HostLocalTitle)
                     For Each E In Diff.HostLocalOnly.Take(5) : Sb.AppendLine($"• {E.F}") : Next
                     If Diff.HostLocalOnly.Count > 5 Then Sb.AppendLine($"……等共 {Diff.HostLocalOnly.Count} 个")
                 End If
 
-                Dim NeedDownloadOrEnableCount = Diff.MissingDownloadable.Count + Diff.MismatchDownloadable.Count + Diff.DisabledMatch.Count
+                Dim NeedDownloadOrEnableCount = Diff.MissingDownloadable.Count + Diff.MismatchDownloadable.Count + Diff.DisabledMatch.Count + P2pPendingCount
                 Dim HasExtra = Diff.ExtraLocal.Any()
                 RunInUi(
                 Sub()
@@ -1648,7 +1656,14 @@
                     If Choice = 2 AndAlso Not (NeedDownloadOrEnableCount > 0 AndAlso HasExtra) Then Return
 
                     Dim DisableExtra As Boolean = (NeedDownloadOrEnableCount = 0 AndAlso HasExtra AndAlso Choice = 1) OrElse (NeedDownloadOrEnableCount > 0 AndAlso HasExtra AndAlso Choice = 2)
-                    ExecuteFriendModSync(TargetInstance, HostManifest, Diff.MissingDownloadable, Diff.MismatchDownloadable, Diff.DisabledMatch, If(DisableExtra, Diff.ExtraLocal, New List(Of LocalResourceFile)))
+                    ExecuteFriendModSync(
+                        TargetInstance, HostManifest,
+                        Diff.MissingDownloadable, Diff.MismatchDownloadable, Diff.DisabledMatch,
+                        If(DisableExtra, Diff.ExtraLocal, New List(Of LocalResourceFile)),
+                        OnCompleted:=If(OnStatusUpdate IsNot Nothing, Sub(ActionDesc, AllOk) OnStatusUpdate($"Mod 同步结果：{ActionDesc}"), Nothing),
+                        P2pMissingList:=If(P2pPullMod IsNot Nothing, Diff.HostLocalOnly, Nothing),
+                        P2pMismatchList:=If(P2pPullMod IsNot Nothing, Diff.MismatchLocalOnly, Nothing),
+                        P2pPullMod:=P2pPullMod)
                 End Sub)
             Catch ex As Exception
                 Logger.Warn(ex, "好友 Mod 差异对比失败")
@@ -1783,7 +1798,10 @@
                                            MismatchList As List(Of (HostEntry As ModFriends.ModSyncEntry, LocalMod As LocalResourceFile)),
                                            EnableDisabledList As List(Of LocalResourceFile),
                                            DisableExtraList As List(Of LocalResourceFile),
-                                           Optional OnCompleted As Action(Of String, Boolean) = Nothing)
+                                           Optional OnCompleted As Action(Of String, Boolean) = Nothing,
+                                           Optional P2pMissingList As List(Of ModFriends.ModSyncEntry) = Nothing,
+                                           Optional P2pMismatchList As List(Of (HostEntry As ModFriends.ModSyncEntry, LocalMod As LocalResourceFile)) = Nothing,
+                                           Optional P2pPullMod As Func(Of String, String, Boolean) = Nothing)
         Hint("正在开始同步好友 Mod 差异……", HintType.Blue)
         RunInNewThread(
         Sub()
@@ -1836,6 +1854,7 @@
                 Dim FailedTitles As New System.Collections.Concurrent.ConcurrentBag(Of String)
                 Dim NonExactFallbackTitles As New System.Collections.Concurrent.ConcurrentBag(Of String)
                 Dim BagItems As New System.Collections.Concurrent.ConcurrentBag(Of (NetFileObj As NetFile, OldMod As LocalResourceFile))
+                Dim P2pFallbackWork As New System.Collections.Concurrent.ConcurrentBag(Of (HostEntry As ModFriends.ModSyncEntry, OldMod As LocalResourceFile))
                 If PendingWork.Any() Then
                     Dim PendingQueue As New System.Collections.Concurrent.ConcurrentQueue(Of (HostEntry As ModFriends.ModSyncEntry, OldMod As LocalResourceFile))(PendingWork)
                     Dim WorkerCount As Integer = Math.Min(4, PendingWork.Count)
@@ -1854,11 +1873,17 @@
                                         If NonExact Then NonExactFallbackTitles.Add(LocalEntry.N)
                                         Dim Nf = Exact.ToNetFile(ModsDir, ResourceVersion.DownloadReason.Standalone, HostManifest.Ver, TargetLdr)
                                         BagItems.Add((Nf, WorkItem.OldMod))
+                                    ElseIf P2pPullMod IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(LocalEntry.F) Then
+                                        P2pFallbackWork.Add(WorkItem)
                                     Else
                                         FailedTitles.Add(If(Not String.IsNullOrWhiteSpace(LocalEntry.N), LocalEntry.N, LocalEntry.F))
                                     End If
                                 Catch
-                                    FailedTitles.Add(If(Not String.IsNullOrWhiteSpace(LocalEntry.N), LocalEntry.N, LocalEntry.F))
+                                    If P2pPullMod IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(LocalEntry.F) Then
+                                        P2pFallbackWork.Add(WorkItem)
+                                    Else
+                                        FailedTitles.Add(If(Not String.IsNullOrWhiteSpace(LocalEntry.N), LocalEntry.N, LocalEntry.F))
+                                    End If
                                 End Try
                             End While
                         End Sub, $"SyncMod Worker {w}")
@@ -1866,6 +1891,47 @@
                     Next
                     For Each T In Workers
                         T.Join()
+                    Next
+                End If
+
+                '3b. 虚网 P2P 直传补齐私有 Mod 与线上解析回退项
+                Dim P2pPulledCount As Integer = 0
+                If P2pPullMod IsNot Nothing Then
+                    Dim AllP2pWork As New List(Of (HostEntry As ModFriends.ModSyncEntry, OldMod As LocalResourceFile))
+                    If P2pMissingList IsNot Nothing Then
+                        For Each Pm In P2pMissingList
+                            AllP2pWork.Add((Pm, Nothing))
+                        Next
+                    End If
+                    If P2pMismatchList IsNot Nothing Then
+                        For Each Pmm In P2pMismatchList
+                            AllP2pWork.Add(Pmm)
+                        Next
+                    End If
+                    For Each Fb In P2pFallbackWork
+                        AllP2pWork.Add(Fb)
+                    Next
+                    For Each Item In AllP2pWork
+                        Dim RawFileName = IO.Path.GetFileName(If(Item.HostEntry.F, "").Trim())
+                        If String.IsNullOrWhiteSpace(RawFileName) Then
+                            FailedTitles.Add(If(Not String.IsNullOrWhiteSpace(Item.HostEntry.N), Item.HostEntry.N, "未知 Mod"))
+                            Continue For
+                        End If
+                        Dim DestPath = IO.Path.Combine(ModsDir, RawFileName)
+                        If P2pPullMod(RawFileName, DestPath) Then
+                            P2pPulledCount += 1
+                            If Item.OldMod IsNot Nothing Then
+                                Try
+                                    Dim OldPath = PathUtils.RemoveExtendedPrefix(Item.OldMod.File.FullName)
+                                    If Not String.Equals(DestPath, OldPath, StringComparison.OrdinalIgnoreCase) AndAlso IO.File.Exists(OldPath) Then
+                                        FileUtils.Delete(OldPath, True)
+                                    End If
+                                Catch
+                                End Try
+                            End If
+                        Else
+                            FailedTitles.Add(If(Not String.IsNullOrWhiteSpace(Item.HostEntry.N), Item.HostEntry.N, RawFileName))
+                        End If
                     Next
                 End If
 
@@ -1886,6 +1952,7 @@
                 If NetFiles.Any() Then
                     Dim FailedSnap = FailedTitles.ToList()
                     Dim FallbackSnap = NonExactFallbackTitles.ToList()
+                    Dim P2pCountSnap = P2pPulledCount
                     Dim CompletionFired As Integer = 0
                     Dim SubLoaders As New List(Of LoaderBase) From {
                         New LoaderTask(Of Integer, Integer)("清理损坏的目标缓存",
@@ -1921,7 +1988,7 @@
                             LoaderStateChangedHintOnly(L)
                             If L.State = LoadState.Finished Then
                                 If Threading.Interlocked.Exchange(CompletionFired, 1) = 0 Then
-                                    VerifyFriendModSyncAfterApply(TargetInstance, HostManifest, NetFiles.Count, ReEnabledCount, DisabledCount, FailedSnap, FallbackSnap, OnCompleted)
+                                    VerifyFriendModSyncAfterApply(TargetInstance, HostManifest, NetFiles.Count + P2pCountSnap, ReEnabledCount, DisabledCount, FailedSnap, FallbackSnap, OnCompleted)
                                 End If
                             ElseIf L.State = LoadState.Failed OrElse L.State = LoadState.Canceled Then
                                 If Threading.Interlocked.Exchange(CompletionFired, 1) = 0 Then
@@ -1938,8 +2005,8 @@
                         FrmMain.BtnExtraDownload.Ribble()
                     End Sub)
                 Else
-                    If DisabledCount > 0 OrElse ReEnabledCount > 0 Then
-                        VerifyFriendModSyncAfterApply(TargetInstance, HostManifest, 0, ReEnabledCount, DisabledCount, FailedTitles.ToList(), NonExactFallbackTitles.ToList(), OnCompleted)
+                    If DisabledCount > 0 OrElse ReEnabledCount > 0 OrElse P2pPulledCount > 0 Then
+                        VerifyFriendModSyncAfterApply(TargetInstance, HostManifest, P2pPulledCount, ReEnabledCount, DisabledCount, FailedTitles.ToList(), NonExactFallbackTitles.ToList(), OnCompleted)
                     Else
                         RunInUi(
                         Sub()

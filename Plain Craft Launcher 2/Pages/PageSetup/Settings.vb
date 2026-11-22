@@ -138,6 +138,7 @@ Public Class Settings
         New Setting("PrecheckWarnMcVersion", True),
         New Setting("PrecheckWarnBreaks", False),
         New Setting("PrecheckWarnServerOnly", False),
+        New Setting("SystemCheckUpdateOnStartup", False),
         New Setting("ToolUpdateRelease", False, Source:=Sources.Registry),
         New Setting("ToolUpdateSnapshot", False, Source:=Sources.Registry),
         New Setting("ToolUpdateReleaseLast", "", Source:=Sources.Registry),
@@ -149,6 +150,7 @@ Public Class Settings
         New Setting("UiLauncherLight", 20),
         New Setting("UiLauncherTheme", 0, OnChanged:=AddressOf ThemeRefresh),
         New Setting("UiColorMode", 0, Source:=Sources.Registry, OnChanged:=Sub() ThemeRefresh()), 'PCL Linking：深浅色（0 浅/1 深/跟随系统），参考 PCL 社区版
+        New Setting("UiLanguage", 0, Source:=Sources.Registry, OnChanged:=Sub() LocalizationService.ApplyLauncherLanguage()), '0: 简体中文 / 1: English
         New Setting("UiLauncherThemeHide", "0|1|2|3|4", Source:=Sources.Registry, Encrypted:=True),
         New Setting("UiLauncherThemeHide2", "0|1|2|3|4", Source:=Sources.Registry, Encrypted:=True),
         New Setting("UiLauncherLogo", True),

@@ -570,4 +570,288 @@ Public Module ModNbt
         Return Res
     End Function
 
+#Region "世界规则与卡服玩家救援扩展"
+
+    Public Class GameRuleDescriptor
+        Public Property Key As String = ""
+        Public Property Title As String = ""
+        Public Property Description As String = ""
+        Public Property IsBoolean As Boolean = True
+        Public Property DefaultValue As String = "false"
+    End Class
+
+    Public Class WorldPlayerNbtInfo
+        Public Property TargetId As String = ""
+        Public Property DisplayName As String = ""
+        Public Property FilePath As String = ""
+        Public Property IsLevelDatPlayer As Boolean = False
+        Public Property Dimension As String = "minecraft:overworld"
+        Public Property PosX As Double = 0
+        Public Property PosY As Double = 64
+        Public Property PosZ As Double = 0
+        Public Property Health As Single = 20.0F
+        Public Property FoodLevel As Integer = 20
+        Public Property XpLevel As Integer = 0
+        Public Property IsStuckRisk As Boolean = False
+    End Class
+
+    Public ReadOnly CommonWorldGameRules As IReadOnlyList(Of GameRuleDescriptor) = New List(Of GameRuleDescriptor) From {
+        New GameRuleDescriptor With {.Key = "keepInventory", .Title = "死亡保留物品栏 (keepInventory)", .Description = "死亡后保留背包物品与经验等级", .IsBoolean = True, .DefaultValue = "false"},
+        New GameRuleDescriptor With {.Key = "doDaylightCycle", .Title = "昼夜交替 (doDaylightCycle)", .Description = "关闭后游戏时间固定停留在当前时刻", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "doWeatherCycle", .Title = "天气变化 (doWeatherCycle)", .Description = "关闭后不再自动下雨或雷暴", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "mobGriefing", .Title = "生物破坏地形 (mobGriefing)", .Description = "苦力怕炸坑、末影人搬方块与村民收割开关", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "doFireTick", .Title = "火焰蔓延 (doFireTick)", .Description = "关闭后火不会引燃或烧毁周围方块", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "pvp", .Title = "允许玩家间伤害 (pvp)", .Description = "局域网合作防误伤可关闭此项", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "naturalRegeneration", .Title = "饱食度自然回血", .Description = "关闭即开启 UHC 极限回血机制", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "announceAdvancements", .Title = "进度播报 (announceAdvancements)", .Description = "是否在聊天栏全服播报玩家获得的进度", .IsBoolean = True, .DefaultValue = "true"},
+        New GameRuleDescriptor With {.Key = "doImmediateRespawn", .Title = "死亡立即重生 (doImmediateRespawn)", .Description = "跳过死亡界面直接复活", .IsBoolean = True, .DefaultValue = "false"}
+    }
+
+    Private Function GetGameRulesCompound(DataTag As NbtTag, Optional CreateIfMissing As Boolean = False) As NbtTag
+        If DataTag Is Nothing OrElse DataTag.AsCompound() Is Nothing Then Return Nothing
+        Dim GrTag = DataTag.GetCompound("GameRules")
+        If GrTag Is Nothing Then GrTag = DataTag.GetCompound("game_rules")
+        If GrTag Is Nothing AndAlso CreateIfMissing Then
+            GrTag = New NbtTag With {
+                .Type = NbtTagType.Compound,
+                .Name = "GameRules",
+                .Value = New Dictionary(Of String, NbtTag)(StringComparer.Ordinal)
+            }
+            DataTag.AsCompound()("GameRules") = GrTag
+        End If
+        Return GrTag
+    End Function
+
+    ''' <summary>
+    ''' 从 level.dat 读取游戏规则键值对（兼容传统 GameRules 与 game_rules 命名）。
+    ''' </summary>
+    Public Function ReadWorldGameRules(LevelDatPath As String) As Dictionary(Of String, String)
+        Dim Result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        If String.IsNullOrWhiteSpace(LevelDatPath) OrElse Not File.Exists(LevelDatPath) Then Return Result
+        Dim Root = ReadNbtFile(LevelDatPath)
+        Dim DataTag = If(Root.GetCompound("Data"), Root)
+        Dim GrTag = GetGameRulesCompound(DataTag, CreateIfMissing:=False)
+        If GrTag Is Nothing OrElse GrTag.AsCompound() Is Nothing Then Return Result
+        For Each Kv In GrTag.AsCompound()
+            If Kv.Value IsNot Nothing AndAlso Kv.Value.Value IsNot Nothing Then
+                Result(Kv.Key) = Kv.Value.Value.ToString()
+            End If
+        Next
+        Return Result
+    End Function
+
+    ''' <summary>
+    ''' 从 level.dat 解析世界出生点坐标，优先读取 26.1+ spawn.pos，其次读取 SpawnX/SpawnY/SpawnZ。
+    ''' </summary>
+    Public Function ResolveWorldSpawnCoords(DataTag As NbtTag) As (X As Integer, Y As Integer, Z As Integer)
+        If DataTag IsNot Nothing Then
+            Dim SpawnTag = DataTag.GetCompound("spawn")
+            Dim SpawnPos = If(SpawnTag IsNot Nothing, SpawnTag.GetIntArray("pos"), Nothing)
+            If SpawnPos IsNot Nothing AndAlso SpawnPos.Length >= 3 Then
+                Return (SpawnPos(0), SpawnPos(1), SpawnPos(2))
+            End If
+            Dim Sx = DataTag.GetInt("SpawnX")
+            Dim Sy = DataTag.GetInt("SpawnY")
+            Dim Sz = DataTag.GetInt("SpawnZ")
+            If Sx.HasValue AndAlso Sy.HasValue AndAlso Sz.HasValue Then
+                Return (Sx.Value, Sy.Value, Sz.Value)
+            End If
+        End If
+        Return (0, 80, 0)
+    End Function
+
+    ''' <summary>
+    ''' 安全更新 level.dat 中的基础字段、GameRules 或世界种子，并在覆盖前保留 level.dat_old 备份。
+    ''' </summary>
+    Public Sub UpdateLevelDatFieldsAndRules(LevelDatPath As String,
+                                            BasicUpdater As Action(Of NbtTag),
+                                            Optional GameRuleUpdates As IDictionary(Of String, String) = Nothing,
+                                            Optional NewSeed As Long? = Nothing)
+        If String.IsNullOrWhiteSpace(LevelDatPath) OrElse Not File.Exists(LevelDatPath) Then
+            Throw New FileNotFoundException("找不到 level.dat 文件", LevelDatPath)
+        End If
+        Dim Root = ReadNbtFile(LevelDatPath)
+        Dim DataTag = If(Root.GetCompound("Data"), Root)
+        BasicUpdater?.Invoke(DataTag)
+
+        If GameRuleUpdates IsNot Nothing AndAlso GameRuleUpdates.Count > 0 Then
+            Dim GrTag = GetGameRulesCompound(DataTag, CreateIfMissing:=True)
+            Dim GrMap = GrTag.AsCompound()
+            For Each Kv In GameRuleUpdates
+                If String.IsNullOrWhiteSpace(Kv.Key) Then Continue For
+                Dim ExistingKey As String = Nothing
+                For Each Existing In GrMap.Keys
+                    If Existing.Equals(Kv.Key.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                        ExistingKey = Existing
+                        Exit For
+                    End If
+                Next
+                Dim TargetKey = If(ExistingKey, Kv.Key.Trim())
+                Dim ExistingTag As NbtTag = Nothing
+                If GrMap.TryGetValue(TargetKey, ExistingTag) AndAlso ExistingTag.Type = NbtTagType.[Byte] Then
+                    Dim BoolVal As Boolean
+                    If Boolean.TryParse(Kv.Value, BoolVal) Then
+                        GrTag.SetByte(TargetKey, If(BoolVal, CByte(1), CByte(0)))
+                        Continue For
+                    End If
+                End If
+                GrTag.SetString(TargetKey, If(Kv.Value, "").Trim())
+            Next
+        End If
+
+        If NewSeed.HasValue Then
+            Dim DataMap = DataTag.AsCompound()
+            If DataMap IsNot Nothing Then
+                If DataMap.ContainsKey("RandomSeed") OrElse DataTag.GetCompound("WorldGenSettings") Is Nothing Then
+                    DataMap("RandomSeed") = New NbtTag With {.Type = NbtTagType.[Long], .Name = "RandomSeed", .Value = NewSeed.Value}
+                End If
+                Dim Wgs = DataTag.GetCompound("WorldGenSettings")
+                If Wgs IsNot Nothing AndAlso Wgs.AsCompound() IsNot Nothing Then
+                    Wgs.AsCompound()("seed") = New NbtTag With {.Type = NbtTagType.[Long], .Name = "seed", .Value = NewSeed.Value}
+                End If
+            End If
+        End If
+
+        WriteNbtFile(LevelDatPath, Root, BackupOld:=True)
+    End Sub
+
+    Private Function BuildPlayerNbtSummary(PlayerTag As NbtTag, TargetId As String, DisplayName As String, FilePath As String, IsLevelDat As Boolean) As WorldPlayerNbtInfo
+        Dim DimTag = PlayerTag.GetChild("Dimension")
+        Dim DimRaw = If(DimTag IsNot Nothing AndAlso DimTag.Value IsNot Nothing, DimTag.Value.ToString(), "minecraft:overworld")
+        Dim Px As Double = 0, Py As Double = 64, Pz As Double = 0
+        Dim PosList = PlayerTag.GetList("Pos")
+        If PosList IsNot Nothing AndAlso PosList.Count >= 3 Then
+            Double.TryParse(Convert.ToString(PosList(0).Value, Globalization.CultureInfo.InvariantCulture), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, Px)
+            Double.TryParse(Convert.ToString(PosList(1).Value, Globalization.CultureInfo.InvariantCulture), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, Py)
+            Double.TryParse(Convert.ToString(PosList(2).Value, Globalization.CultureInfo.InvariantCulture), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, Pz)
+        End If
+        Dim Health = PlayerTag.GetFloat("Health").GetValueOrDefault(20.0F)
+        Dim Food = PlayerTag.GetInt("foodLevel").GetValueOrDefault(20)
+        Dim Xp = PlayerTag.GetInt("XpLevel").GetValueOrDefault(0)
+        Dim Risk As Boolean = Double.IsNaN(Px) OrElse Double.IsInfinity(Px) OrElse
+                              Double.IsNaN(Py) OrElse Double.IsInfinity(Py) OrElse Py < -64 OrElse Py > 360 OrElse
+                              Double.IsNaN(Pz) OrElse Double.IsInfinity(Pz) OrElse
+                              Math.Abs(Px) > 29999900 OrElse Math.Abs(Pz) > 29999900 OrElse Health <= 0.0F
+        Return New WorldPlayerNbtInfo With {
+            .TargetId = TargetId,
+            .DisplayName = DisplayName,
+            .FilePath = FilePath,
+            .IsLevelDatPlayer = IsLevelDat,
+            .Dimension = DimRaw,
+            .PosX = Px,
+            .PosY = Py,
+            .PosZ = Pz,
+            .Health = Health,
+            .FoodLevel = Food,
+            .XpLevel = Xp,
+            .IsStuckRisk = Risk
+        }
+    End Function
+
+    ''' <summary>
+    ''' 枚举存档内全部可识别玩家状态（含 level.dat 单人主机玩家与 playerdata/*.dat 多人档案）。
+    ''' </summary>
+    Public Function InspectWorldPlayers(WorldDir As String) As List(Of WorldPlayerNbtInfo)
+        Dim List As New List(Of WorldPlayerNbtInfo)
+        If String.IsNullOrWhiteSpace(WorldDir) OrElse Not Directory.Exists(WorldDir) Then Return List
+
+        Dim LevelDat = Path.Combine(WorldDir, "level.dat")
+        If File.Exists(LevelDat) Then
+            Try
+                Dim Root = ReadNbtFile(LevelDat)
+                Dim DataTag = If(Root.GetCompound("Data"), Root)
+                Dim PlayerTag = DataTag.GetCompound("Player")
+                If PlayerTag IsNot Nothing Then
+                    List.Add(BuildPlayerNbtSummary(PlayerTag, "level_dat_player", "单人房主玩家 (level.dat)", LevelDat, True))
+                End If
+            Catch
+            End Try
+        End If
+
+        Dim PlayerDataDir = Path.Combine(WorldDir, "playerdata")
+        If Directory.Exists(PlayerDataDir) Then
+            For Each DatFile In Directory.GetFiles(PlayerDataDir, "*.dat", SearchOption.TopDirectoryOnly).OrderByDescending(Function(f) File.GetLastWriteTimeUtc(f))
+                Try
+                    Dim PTag = ReadNbtFile(DatFile)
+                    Dim Uuid = Path.GetFileNameWithoutExtension(DatFile)
+                    Dim ShortId = If(Uuid.Length > 12, Uuid.Substring(0, 8) & "...", Uuid)
+                    List.Add(BuildPlayerNbtSummary(PTag, Uuid, $"玩家档案 ({ShortId})", DatFile, False))
+                Catch
+                End Try
+            Next
+        End If
+        Return List
+    End Function
+
+    Private Sub ResetPlayerTagToSpawn(PlayerTag As NbtTag, SpawnX As Double, SpawnY As Double, SpawnZ As Double)
+        Dim Map = PlayerTag.AsCompound()
+        If Map Is Nothing Then Throw New InvalidDataException("玩家 NBT 数据结构无效")
+
+        Map("Pos") = New NbtTag With {
+            .Type = NbtTagType.List,
+            .Name = "Pos",
+            .ListElementType = NbtTagType.[Double],
+            .Value = New List(Of NbtTag) From {
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = SpawnX},
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = SpawnY},
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = SpawnZ}
+            }
+        }
+        Map("Motion") = New NbtTag With {
+            .Type = NbtTagType.List,
+            .Name = "Motion",
+            .ListElementType = NbtTagType.[Double],
+            .Value = New List(Of NbtTag) From {
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = 0.0R},
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = 0.0R},
+                New NbtTag With {.Type = NbtTagType.[Double], .Value = 0.0R}
+            }
+        }
+        Dim ExistingDim = PlayerTag.GetChild("Dimension")
+        If ExistingDim IsNot Nothing AndAlso ExistingDim.Type = NbtTagType.[Int] Then
+            Map("Dimension") = New NbtTag With {.Type = NbtTagType.[Int], .Name = "Dimension", .Value = 0}
+        Else
+            PlayerTag.SetString("Dimension", "minecraft:overworld")
+        End If
+        Map("FallDistance") = New NbtTag With {.Type = NbtTagType.[Single], .Name = "FallDistance", .Value = 0.0F}
+        Map("Fire") = New NbtTag With {.Type = NbtTagType.[Short], .Name = "Fire", .Value = CShort(-20)}
+        Dim Health = PlayerTag.GetFloat("Health").GetValueOrDefault(20.0F)
+        If Single.IsNaN(Health) OrElse Health <= 0.0F Then
+            Map("Health") = New NbtTag With {.Type = NbtTagType.[Single], .Name = "Health", .Value = 20.0F}
+            Map("DeathTime") = New NbtTag With {.Type = NbtTagType.[Short], .Name = "DeathTime", .Value = CShort(0)}
+        End If
+    End Sub
+
+    ''' <summary>
+    ''' 将指定卡死/掉虚空/崩溃实体区的玩家安全传送回主世界出生点（清空速度与摔落高度），并生成 _old 备份。
+    ''' </summary>
+    Public Function RescueWorldPlayerToSpawn(WorldDir As String, TargetPlayerFilePath As String, IsLevelDatPlayer As Boolean) As (SpawnX As Double, SpawnY As Double, SpawnZ As Double)
+        Dim LevelDat = Path.Combine(WorldDir, "level.dat")
+        If Not File.Exists(LevelDat) Then Throw New FileNotFoundException("找不到 level.dat，无法定位世界出生点", LevelDat)
+        Dim LevelRoot = ReadNbtFile(LevelDat)
+        Dim LevelDataTag = If(LevelRoot.GetCompound("Data"), LevelRoot)
+        Dim Spawn = ResolveWorldSpawnCoords(LevelDataTag)
+        Dim SafeX As Double = Spawn.X + 0.5R
+        Dim SafeY As Double = Math.Max(Spawn.Y, -60) + 1.0R
+        Dim SafeZ As Double = Spawn.Z + 0.5R
+
+        If IsLevelDatPlayer Then
+            Dim PTag = LevelDataTag.GetCompound("Player")
+            If PTag Is Nothing Then Throw New InvalidDataException("level.dat 中不存在单人 Player 数据")
+            ResetPlayerTagToSpawn(PTag, SafeX, SafeY, SafeZ)
+            WriteNbtFile(LevelDat, LevelRoot, BackupOld:=True)
+        Else
+            If String.IsNullOrWhiteSpace(TargetPlayerFilePath) OrElse Not File.Exists(TargetPlayerFilePath) Then
+                Throw New FileNotFoundException("找不到目标玩家 .dat 文件", TargetPlayerFilePath)
+            End If
+            Dim PlayerRoot = ReadNbtFile(TargetPlayerFilePath)
+            ResetPlayerTagToSpawn(PlayerRoot, SafeX, SafeY, SafeZ)
+            WriteNbtFile(TargetPlayerFilePath, PlayerRoot, BackupOld:=True)
+        End If
+
+        Return (SafeX, SafeY, SafeZ)
+    End Function
+
+#End Region
+
 End Module

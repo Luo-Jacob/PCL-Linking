@@ -1,4 +1,4 @@
-# PCL Linking (`v 1.1.0`)
+# PCL Linking (`v 1.1.1`)
 
 **PCL Linking**是基于 **龙腾猫跃 (LTCat)** 开源的 **Plain Craft Launcher (PCL) 2.14.0.0** 进行二次开发的非盈利 Minecraft 多人联机与实用工具增强分支。
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 核心功能模块（`v 1.1.0`）
+## 核心功能模块（`v 1.1.1`）
 
 ### 多人联机与社交增强
 
@@ -52,6 +52,7 @@
 
 - **环境要求**：Visual Studio 2022+（「.NET 桌面开发」工作负载 / MSBuild）与 .NET Framework 4.8 Targeting Pack。
 - **构建命令**：在仓库根目录执行 `build.cmd`（或设置 `set CI=1` 后运行 `build.cmd __child`），生成产物位于 `dist\PCLLK.exe` 并自动复制一份到当前用户桌面。
+- **版本更新与多语言**：支持在「设置 → 个性化」切换 **简体中文 / English** 双语界面（即时生效），并在「设置 → 关于」按需检查 GitHub Releases 最新正式版本。
 
 ## 问题反馈
 

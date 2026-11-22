@@ -28,6 +28,8 @@ Public Module EasyTierSideChannelCore
         ReqPushFile = 7
         RespPushDecision = 8
         TransferResultAck = 9
+        ReqPullModFile = 10
+        ReqPullConfigPack = 11
         ErrorFrame = 255
     End Enum
 
@@ -53,6 +55,8 @@ Public Module EasyTierSideChannelCore
         ''' </summary>
         Public Property ConfirmIncomingPush As Func(Of SideChannelOffer, (Accepted As Boolean, TempReceivePath As String, FinalDestPath As String, ActionKind As String, Message As String))
         Public Property OnPushCompleted As Action(Of SideChannelOffer, Boolean, String, String)
+        Public Property ResolveHostModFile As Func(Of String, String)
+        Public Property PackHostConfigZip As Func(Of String)
         Public Property OnLog As Action(Of String)
     End Class
 
@@ -78,11 +82,14 @@ Public Module EasyTierSideChannelCore
         Return $"{SizeBytes} B"
     End Function
 
-    Public Function PackWorldSaveToZip(WorldDir As String, DestZipPath As String, Optional OnFilePacked As Action(Of Integer, Integer) = Nothing) As (SizeBytes As Long, Sha256 As String)
-        If String.IsNullOrWhiteSpace(WorldDir) OrElse Not Directory.Exists(WorldDir) Then
-            Throw New DirectoryNotFoundException($"存档目录不存在：{WorldDir}")
+    Public Function PackDirectoryToZip(SourceDir As String, DestZipPath As String,
+                                       Optional SkipSessionLock As Boolean = True,
+                                       Optional MaxSourceBytes As Long = 0,
+                                       Optional OnFilePacked As Action(Of Integer, Integer) = Nothing) As (SizeBytes As Long, Sha256 As String)
+        If String.IsNullOrWhiteSpace(SourceDir) OrElse Not Directory.Exists(SourceDir) Then
+            Throw New DirectoryNotFoundException($"目录不存在：{SourceDir}")
         End If
-        Dim RootFull = Path.GetFullPath(WorldDir).TrimEnd(Path.DirectorySeparatorChar) & Path.DirectorySeparatorChar
+        Dim RootFull = Path.GetFullPath(SourceDir).TrimEnd(Path.DirectorySeparatorChar) & Path.DirectorySeparatorChar
         Dim Parent = Path.GetDirectoryName(DestZipPath)
         If Not String.IsNullOrEmpty(Parent) Then Directory.CreateDirectory(Parent)
         Dim TmpZip = DestZipPath & ".tmp"
@@ -91,10 +98,20 @@ Public Module EasyTierSideChannelCore
         Dim Files = Directory.GetFiles(RootFull, "*", SearchOption.AllDirectories).
             Where(Function(f)
                       Dim Fn = Path.GetFileName(f)
-                      If Fn.Equals("session.lock", StringComparison.OrdinalIgnoreCase) Then Return False
+                      If SkipSessionLock AndAlso Fn.Equals("session.lock", StringComparison.OrdinalIgnoreCase) Then Return False
                       If Fn.EndsWith(".lmltmp", StringComparison.OrdinalIgnoreCase) OrElse Fn.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) Then Return False
                       Return True
                   End Function).ToList()
+
+        If MaxSourceBytes > 0 Then
+            Dim TotalRaw As Long = 0
+            For Each F In Files
+                TotalRaw += New FileInfo(F).Length
+                If TotalRaw > MaxSourceBytes Then
+                    Throw New InvalidDataException($"目录体积超过 {FormatByteSizeDisplay(MaxSourceBytes)} 安全上限！")
+                End If
+            Next
+        End If
 
         Using Archive = ZipFile.Open(TmpZip, ZipArchiveMode.Create)
             Dim Buf(65535) As Byte
@@ -121,44 +138,55 @@ Public Module EasyTierSideChannelCore
         Return (Info.Length, ComputeSha256HexFile(DestZipPath))
     End Function
 
+    Public Function PackWorldSaveToZip(WorldDir As String, DestZipPath As String, Optional OnFilePacked As Action(Of Integer, Integer) = Nothing) As (SizeBytes As Long, Sha256 As String)
+        Return PackDirectoryToZip(WorldDir, DestZipPath, SkipSessionLock:=True, MaxSourceBytes:=0, OnFilePacked:=OnFilePacked)
+    End Function
+
+    Private Function ExtractZipToStagingSafely(ZipPath As String, StagingDir As String, MaxEntries As Integer, MaxTotalBytes As Long) As Integer
+        Dim StagingRoot = Path.GetFullPath(StagingDir).TrimEnd(Path.DirectorySeparatorChar) & Path.DirectorySeparatorChar
+        Dim TotalBytes As Long = 0
+        Dim EntryCount As Integer = 0
+        Dim ExtractedFiles As Integer = 0
+        Using Archive = ZipFile.OpenRead(ZipPath)
+            Dim Buf(65535) As Byte
+            For Each Entry In Archive.Entries
+                EntryCount += 1
+                If EntryCount > MaxEntries Then Throw New InvalidDataException($"压缩包内文件数量超过 {MaxEntries} 安全上限！")
+                Dim Rel = Entry.FullName.Replace("/"c, "\"c).TrimStart("\"c)
+                If String.IsNullOrEmpty(Rel) Then Continue For
+                Dim FullDest = Path.GetFullPath(Path.Combine(StagingRoot, Rel))
+                If Not FullDest.StartsWith(StagingRoot, StringComparison.OrdinalIgnoreCase) Then
+                    Throw New InvalidDataException($"检测到不安全的路径穿越条目：{Entry.FullName}")
+                End If
+                If Entry.FullName.EndsWith("/") OrElse Entry.FullName.EndsWith("\") Then
+                    Directory.CreateDirectory(FullDest)
+                    Continue For
+                End If
+                Dim PDir = Path.GetDirectoryName(FullDest)
+                If Not String.IsNullOrEmpty(PDir) Then Directory.CreateDirectory(PDir)
+                Using Src = Entry.Open(), Dst As New FileStream(FullDest, FileMode.Create, FileAccess.Write, FileShare.None)
+                    Do
+                        Dim N = Src.Read(Buf, 0, Buf.Length)
+                        If N <= 0 Then Exit Do
+                        TotalBytes += N
+                        If TotalBytes > MaxTotalBytes Then Throw New InvalidDataException($"解压体积超过 {FormatByteSizeDisplay(MaxTotalBytes)} 安全上限！")
+                        Dst.Write(Buf, 0, N)
+                    Loop
+                End Using
+                ExtractedFiles += 1
+            Next
+        End Using
+        Return ExtractedFiles
+    End Function
+
     Public Sub ExtractWorldSaveZipSafely(ZipPath As String, DestSaveDir As String, Optional DeleteZipAfter As Boolean = False)
         Const MAX_ENTRIES As Integer = 100000
         Const MAX_TOTAL_BYTES As Long = 4L * 1024 * 1024 * 1024
         Dim StagingDir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(DestSaveDir)), ".pcl_staging_" & Guid.NewGuid().ToString("N").Substring(0, 8))
         Directory.CreateDirectory(StagingDir)
         Try
+            ExtractZipToStagingSafely(ZipPath, StagingDir, MAX_ENTRIES, MAX_TOTAL_BYTES)
             Dim StagingRoot = Path.GetFullPath(StagingDir).TrimEnd(Path.DirectorySeparatorChar) & Path.DirectorySeparatorChar
-            Dim TotalBytes As Long = 0
-            Dim EntryCount As Integer = 0
-            Using Archive = ZipFile.OpenRead(ZipPath)
-                Dim Buf(65535) As Byte
-                For Each Entry In Archive.Entries
-                    EntryCount += 1
-                    If EntryCount > MAX_ENTRIES Then Throw New InvalidDataException("存档压缩包内文件数量超过 100,000 安全上限！")
-                    Dim Rel = Entry.FullName.Replace("/"c, "\"c).TrimStart("\"c)
-                    If String.IsNullOrEmpty(Rel) Then Continue For
-                    Dim FullDest = Path.GetFullPath(Path.Combine(StagingRoot, Rel))
-                    If Not FullDest.StartsWith(StagingRoot, StringComparison.OrdinalIgnoreCase) Then
-                        Throw New InvalidDataException($"检测到不安全的路径穿越条目：{Entry.FullName}")
-                    End If
-                    If Entry.FullName.EndsWith("/") OrElse Entry.FullName.EndsWith("\") Then
-                        Directory.CreateDirectory(FullDest)
-                        Continue For
-                    End If
-                    Dim PDir = Path.GetDirectoryName(FullDest)
-                    If Not String.IsNullOrEmpty(PDir) Then Directory.CreateDirectory(PDir)
-                    Using Src = Entry.Open(), Dst As New FileStream(FullDest, FileMode.Create, FileAccess.Write, FileShare.None)
-                        Do
-                            Dim N = Src.Read(Buf, 0, Buf.Length)
-                            If N <= 0 Then Exit Do
-                            TotalBytes += N
-                            If TotalBytes > MAX_TOTAL_BYTES Then Throw New InvalidDataException("存档解压体积超过 4 GB 安全上限！")
-                            Dst.Write(Buf, 0, N)
-                        Loop
-                    End Using
-                Next
-            End Using
-
             Dim SourceRoot As String = StagingRoot.TrimEnd(Path.DirectorySeparatorChar)
             If Not File.Exists(Path.Combine(SourceRoot, "level.dat")) Then
                 Dim LevelFiles = Directory.GetFiles(SourceRoot, "level.dat", SearchOption.AllDirectories)
@@ -732,6 +760,69 @@ Public Module EasyTierSideChannelCore
                                     End Try
                                     _Callbacks.OnPushCompleted?.Invoke(ReqOffer, False, "", recvEx.Message)
                                 End Try
+
+                            Case SideMsgType.ReqPullModFile
+                                Dim ReqObj = JObject.Parse(Frame.JsonPayload)
+                                Dim ReqFileName = If(ReqObj("fileName")?.ToString(), "").Trim()
+                                If String.IsNullOrWhiteSpace(ReqFileName) OrElse
+                                   ReqFileName.IndexOfAny(New Char() {"/"c, "\"c, ":"c}) >= 0 OrElse
+                                   ReqFileName = "." OrElse ReqFileName = ".." OrElse
+                                   Not Path.GetFileName(ReqFileName).Equals(ReqFileName, StringComparison.Ordinal) OrElse
+                                   Not (ReqFileName.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) OrElse ReqFileName.EndsWith(".litemod", StringComparison.OrdinalIgnoreCase)) Then
+                                    SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.ErrorFrame, New JObject From {{"error", "非法的 Mod 文件名"}}.ToString(Formatting.None))
+                                    Return
+                                End If
+                                Dim ModPath = _Callbacks.ResolveHostModFile?.Invoke(ReqFileName)
+                                If String.IsNullOrWhiteSpace(ModPath) OrElse Not File.Exists(ModPath) Then
+                                    SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.ErrorFrame, New JObject From {{"error", $"房主实例中未找到可共享的 Mod：{ReqFileName}"}}.ToString(Formatting.None))
+                                    Return
+                                End If
+                                Dim ModFi As New FileInfo(ModPath)
+                                If ModFi.Length <= 0 OrElse ModFi.Length > 512L * 1024 * 1024 Then
+                                    SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.ErrorFrame, New JObject From {{"error", "Mod 文件体积超出 512 MB 限制"}}.ToString(Formatting.None))
+                                    Return
+                                End If
+                                Dim ModOffer As New SideChannelOffer With {
+                                    .OfferId = "mod_" & Guid.NewGuid().ToString("N").Substring(0, 8),
+                                    .Kind = "mod",
+                                    .Name = ReqFileName,
+                                    .FileName = ReqFileName,
+                                    .SizeBytes = ModFi.Length,
+                                    .Sha256 = ComputeSha256HexFile(ModPath),
+                                    .Sender = "Host"
+                                }
+                                SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.RespPullMeta, JsonConvert.SerializeObject(ModOffer))
+                                SendEncryptedFileStream(Ns, Keys.AuthKey, Keys.AesKey, ModPath, ModFi.Length)
+
+                            Case SideMsgType.ReqPullConfigPack
+                                Dim TempConfigZip = _Callbacks.PackHostConfigZip?.Invoke()
+                                If String.IsNullOrWhiteSpace(TempConfigZip) OrElse Not File.Exists(TempConfigZip) Then
+                                    SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.ErrorFrame, New JObject From {{"error", "房主实例当前没有可同步的 config 目录"}}.ToString(Formatting.None))
+                                    Return
+                                End If
+                                Try
+                                    Dim CfgFi As New FileInfo(TempConfigZip)
+                                    If CfgFi.Length <= 0 OrElse CfgFi.Length > 128L * 1024 * 1024 Then
+                                        SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.ErrorFrame, New JObject From {{"error", "config 压缩包超出 128 MB 安全上限"}}.ToString(Formatting.None))
+                                        Return
+                                    End If
+                                    Dim CfgOffer As New SideChannelOffer With {
+                                        .OfferId = "cfg_" & Guid.NewGuid().ToString("N").Substring(0, 8),
+                                        .Kind = "config",
+                                        .Name = "config.zip",
+                                        .FileName = "config.zip",
+                                        .SizeBytes = CfgFi.Length,
+                                        .Sha256 = ComputeSha256HexFile(TempConfigZip),
+                                        .Sender = "Host"
+                                    }
+                                    SendEncryptedFrame(Ns, Keys.AuthKey, Keys.AesKey, SideMsgType.RespPullMeta, JsonConvert.SerializeObject(CfgOffer))
+                                    SendEncryptedFileStream(Ns, Keys.AuthKey, Keys.AesKey, TempConfigZip, CfgFi.Length)
+                                Finally
+                                    Try
+                                        If File.Exists(TempConfigZip) Then File.Delete(TempConfigZip)
+                                    Catch
+                                    End Try
+                                End Try
                         End Select
                     End Using
                 Catch ex As Exception
@@ -799,6 +890,17 @@ Public Module EasyTierSideChannelCore
         End Using
     End Function
 
+    Private Sub PullMetaAndReceiveFile(Ns As NetworkStream, AuthKey As Byte(), AesKey As Byte(), DestPath As String, Optional OnProgress As Action(Of Long, Long) = Nothing)
+        Dim MetaResp = ReadEncryptedFrame(Ns, AuthKey, AesKey)
+        If MetaResp.MsgType = SideMsgType.ErrorFrame Then
+            Dim ErrObj = JObject.Parse(MetaResp.JsonPayload)
+            Throw New InvalidOperationException(If(ErrObj("error")?.ToString(), "远端返回错误"))
+        End If
+        Dim Meta = JsonConvert.DeserializeObject(Of SideChannelOffer)(MetaResp.JsonPayload)
+        If Meta Is Nothing OrElse Meta.SizeBytes <= 0 Then Throw New InvalidDataException("无效的共享文件元数据")
+        ReceiveEncryptedFileStream(Ns, AuthKey, AesKey, DestPath, Meta.SizeBytes, Meta.Sha256, OnProgress)
+    End Sub
+
     Public Sub PullOfferToFile(LocalPort As Integer, Secret As String, OfferId As String, DestPath As String,
                                Optional OnProgress As Action(Of Long, Long) = Nothing,
                                Optional TransferTimeoutMs As Integer = 120000)
@@ -806,16 +908,76 @@ Public Module EasyTierSideChannelCore
         Using TcpCli As TcpClient = Conn.Client, Ns As NetworkStream = Conn.Stream
             SendEncryptedFrame(Ns, Conn.AuthKey, Conn.AesKey, SideMsgType.ReqPullOffer,
                 New JObject From {{"offerId", OfferId}}.ToString(Formatting.None))
-            Dim MetaResp = ReadEncryptedFrame(Ns, Conn.AuthKey, Conn.AesKey)
-            If MetaResp.MsgType = SideMsgType.ErrorFrame Then
-                Dim ErrObj = JObject.Parse(MetaResp.JsonPayload)
-                Throw New InvalidOperationException(If(ErrObj("error")?.ToString(), "远端返回错误"))
-            End If
-            Dim Meta = JsonConvert.DeserializeObject(Of SideChannelOffer)(MetaResp.JsonPayload)
-            If Meta Is Nothing OrElse Meta.SizeBytes <= 0 Then Throw New InvalidDataException("无效的共享文件元数据")
-            ReceiveEncryptedFileStream(Ns, Conn.AuthKey, Conn.AesKey, DestPath, Meta.SizeBytes, Meta.Sha256, OnProgress)
+            PullMetaAndReceiveFile(Ns, Conn.AuthKey, Conn.AesKey, DestPath, OnProgress)
         End Using
     End Sub
+
+    Public Sub PullModFileToPath(LocalPort As Integer, Secret As String, ModFileName As String, DestModPath As String,
+                                 Optional OnProgress As Action(Of Long, Long) = Nothing,
+                                 Optional TransferTimeoutMs As Integer = 120000)
+        If String.IsNullOrWhiteSpace(ModFileName) OrElse ModFileName.IndexOfAny(New Char() {"/"c, "\"c, ":"c}) >= 0 Then
+            Throw New ArgumentException("非法的 Mod 文件名", NameOf(ModFileName))
+        End If
+        Dim Conn = ConnectAndHandshake(LocalPort, Secret, TransferTimeoutMs)
+        Using TcpCli As TcpClient = Conn.Client, Ns As NetworkStream = Conn.Stream
+            SendEncryptedFrame(Ns, Conn.AuthKey, Conn.AesKey, SideMsgType.ReqPullModFile,
+                New JObject From {{"fileName", ModFileName}}.ToString(Formatting.None))
+            PullMetaAndReceiveFile(Ns, Conn.AuthKey, Conn.AesKey, DestModPath, OnProgress)
+        End Using
+    End Sub
+
+    Public Function PullConfigPackToDirectory(LocalPort As Integer, Secret As String, DestConfigDir As String, BackupRootDir As String,
+                                              Optional OnProgress As Action(Of Long, Long) = Nothing,
+                                              Optional TransferTimeoutMs As Integer = 120000) As (ExtractedFiles As Integer, BackupZipPath As String)
+        Dim DestFull = Path.GetFullPath(DestConfigDir)
+        Dim ParentDir = Path.GetDirectoryName(DestFull)
+        Directory.CreateDirectory(ParentDir)
+
+        Dim TmpZip = Path.Combine(ParentDir, $".pcl_cfg_{Guid.NewGuid().ToString("N").Substring(0, 8)}.zip")
+        Dim StagingDir = Path.Combine(ParentDir, $".pcl_cfg_stage_{Guid.NewGuid().ToString("N").Substring(0, 8)}")
+        Dim BackupZipPath As String = ""
+
+        Try
+            Dim Conn = ConnectAndHandshake(LocalPort, Secret, TransferTimeoutMs)
+            Using TcpCli As TcpClient = Conn.Client, Ns As NetworkStream = Conn.Stream
+                SendEncryptedFrame(Ns, Conn.AuthKey, Conn.AesKey, SideMsgType.ReqPullConfigPack, "{}")
+                PullMetaAndReceiveFile(Ns, Conn.AuthKey, Conn.AesKey, TmpZip, OnProgress)
+            End Using
+
+            Directory.CreateDirectory(StagingDir)
+            Dim ExtractedCount = ExtractZipToStagingSafely(TmpZip, StagingDir, 50000, 128L * 1024 * 1024)
+
+            If Directory.Exists(DestFull) AndAlso Directory.EnumerateFiles(DestFull, "*", SearchOption.AllDirectories).Any() Then
+                If Not String.IsNullOrWhiteSpace(BackupRootDir) Then
+                    Directory.CreateDirectory(BackupRootDir)
+                    BackupZipPath = Path.Combine(BackupRootDir, $"ConfigBackup_{DateTime.Now:yyyyMMdd_HHmmss}.zip")
+                    PackDirectoryToZip(DestFull, BackupZipPath, SkipSessionLock:=False)
+                    Try
+                        Dim OldBaks = Directory.GetFiles(BackupRootDir, "ConfigBackup_*.zip").OrderByDescending(Function(p) p).Skip(3).ToList()
+                        For Each OldBak In OldBaks
+                            File.Delete(OldBak)
+                        Next
+                    Catch
+                    End Try
+                End If
+                Directory.Delete(DestFull, True)
+            ElseIf Directory.Exists(DestFull) Then
+                Directory.Delete(DestFull, True)
+            End If
+
+            Directory.Move(StagingDir, DestFull)
+            Return (ExtractedCount, BackupZipPath)
+        Finally
+            Try
+                If File.Exists(TmpZip) Then File.Delete(TmpZip)
+            Catch
+            End Try
+            Try
+                If Directory.Exists(StagingDir) Then Directory.Delete(StagingDir, True)
+            Catch
+            End Try
+        End Try
+    End Function
 
     Public Sub PushFileToHost(LocalPort As Integer, Secret As String, Kind As String, DisplayName As String, FileName As String,
                               LocalFilePath As String, SenderName As String,

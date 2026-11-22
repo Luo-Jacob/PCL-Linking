@@ -35,6 +35,8 @@
 | `Plain Craft Launcher 2/MitCore/ServerConfigAndPluginCore.vb` | 服务端插件元数据 (`plugin.yml` / `paper-plugin.yml` / `bungee.yml` / `velocity-plugin.json`) 解析、依赖检查、性能优化配置读写与 Aikar/ZGC 启动参数构建 | MIT |
 | `Plain Craft Launcher 2/MitCore/EasyTierSideChannelCore.vb` | EasyTier 虚网侧通道：房间密钥 HMAC-SHA256 鉴权、AES-256-CBC 加密帧与流式大文件直传、存档打包过滤 (`session.lock`) 与安全解压 | MIT |
 | `Plain Craft Launcher 2/MitCore/OptionsKeybindCore.vb` | `options.txt` 分类解析、跨实例按键/画面/音频选择性迁移（自动 `.bak` 备份）与冲突检测/一键解绑 | MIT |
+| `Plain Craft Launcher 2/MitCore/GitHubReleaseCheckCore.vb` | 语义化版本号比对与 GitHub Releases API JSON 解析（含资产 SHA-256 提取与官方域名白名单校验） | MIT |
+| `Plain Craft Launcher 2/MitCore/LocalizationCore.vb` | 简体中文 / English 双语词典加载、动态模板匹配与多语言字符串解析引擎 | MIT |
 | `build.cmd` | 自动化定位 MSBuild、构建发布单文件产物并自动同步到桌面的独立命令行构建脚本 | MIT |
 
 ---

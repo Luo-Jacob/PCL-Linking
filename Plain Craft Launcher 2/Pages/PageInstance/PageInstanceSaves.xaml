@@ -80,14 +80,28 @@
                         <local:MyCheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckAllowCommands" Text="允许作弊 / 开启命令" VerticalAlignment="Center" />
                         <local:MyCheckBox Grid.Row="2" Grid.Column="3" Grid.ColumnSpan="2" x:Name="CheckDifficultyLocked" Text="锁定当前难度" VerticalAlignment="Center" />
                     </Grid>
-                    <local:MyButton x:Name="BtnSaveNbt" Text="保存存档设置到 level.dat" MinWidth="180" Height="32" Padding="14,0" ColorType="Highlight" HorizontalAlignment="Left" />
+
+                    <TextBlock Text="常用游戏规则 (GameRules)" FontWeight="SemiBold" Margin="0,2,0,8" />
+                    <WrapPanel x:Name="PanCommonGameRules" Margin="0,0,0,10" />
+
+                    <WrapPanel Orientation="Horizontal">
+                        <local:MyButton x:Name="BtnSaveNbt" Text="保存存档设置与规则到 level.dat" MinWidth="210" Height="32" Padding="14,0" ColorType="Highlight" Margin="0,0,10,4" />
+                        <local:MyButton x:Name="BtnEditSeedOrRule" Text="修改种子 / 自定义规则..." MinWidth="165" Height="32" Padding="14,0" Margin="0,0,0,4" />
+                    </WrapPanel>
                 </StackPanel>
             </local:MyCard>
 
-            <local:MyCard x:Name="CardPlayerOverview" Title="玩家状态与背包概览" Margin="0,0,0,15" Visibility="Collapsed" CanSwap="True">
+            <local:MyCard x:Name="CardPlayerOverview" Title="玩家状态、背包概览与卡服救援" Margin="0,0,0,15" Visibility="Collapsed" CanSwap="True">
                 <StackPanel Margin="25,40,25,18">
+                    <local:MyHint x:Name="HintPlayerStuckRisk" Visibility="Collapsed" Theme="Red" Margin="0,0,0,10"
+                                  Text="检测到有玩家处于极端坐标、掉入虚空或生命值为 0，可使用下方救援按钮一键传送回主世界出生点（自动备份 _old）。" />
                     <TextBlock x:Name="LabPlayerSummary" TextWrapping="Wrap" Margin="0,0,0,8" Text="正在读取玩家数据..." />
-                    <TextBlock x:Name="LabInventorySummary" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Text="" />
+                    <TextBlock x:Name="LabInventorySummary" Foreground="{DynamicResource ColorBrush2}" TextWrapping="Wrap" Margin="0,0,0,12" Text="" />
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="救援目标玩家：" VerticalAlignment="Center" Margin="0,0,8,6" />
+                        <local:MyComboBox x:Name="ComboRescuePlayer" MinWidth="250" Height="28" Margin="0,0,10,6" />
+                        <local:MyButton x:Name="BtnRescuePlayer" Text="卡服玩家安全回出生点" MinWidth="175" Height="30" Padding="12,0" ColorType="Highlight" Margin="0,0,0,6" />
+                    </WrapPanel>
                 </StackPanel>
             </local:MyCard>
 

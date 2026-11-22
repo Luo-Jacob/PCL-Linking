@@ -1,0 +1,235 @@
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 Luo-Jacob / PCL Linking Contributors
+' Standalone bilingual (Simplified Chinese / English) localization dictionary & dynamic pattern translator (no PCL/WPF dependencies).
+
+Imports System.Collections.Concurrent
+Imports System.Collections.Generic
+Imports System.IO
+Imports System.Reflection
+Imports System.Text
+Imports System.Text.RegularExpressions
+Imports Newtonsoft.Json.Linq
+
+Public Module LocalizationCore
+
+    Public Enum LauncherLanguage As Integer
+        ChineseSimplified = 0
+        English = 1
+    End Enum
+
+    Public Property CurrentLanguage As LauncherLanguage = LauncherLanguage.ChineseSimplified
+
+    Private ReadOnly Translations As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
+    Public ReadOnly Property DictionaryCount As Integer
+        Get
+            Return Translations.Count
+        End Get
+    End Property
+
+    Public Function IsEnglishActive() As Boolean
+        Return CurrentLanguage = LauncherLanguage.English
+    End Function
+
+    Public Sub LoadTranslationsFromJson(JsonText As String)
+        If String.IsNullOrWhiteSpace(JsonText) Then Return
+        Dim Obj = JObject.Parse(JsonText)
+        For Each Prop In Obj.Properties()
+            If Prop.Value Is Nothing OrElse Prop.Value.Type = JTokenType.Null Then Continue For
+            Dim NormKey = NormalizeLineBreaks(Prop.Name)
+            Translations(NormKey) = Prop.Value.ToString()
+        Next
+    End Sub
+
+    Public Sub LoadEmbeddedTranslations(TargetAssembly As Assembly, Optional ResourceSuffix As String = "en-US.json")
+        If TargetAssembly Is Nothing Then Return
+        Dim Names = TargetAssembly.GetManifestResourceNames()
+        For Each ResName In Names
+            If ResName.EndsWith(ResourceSuffix, StringComparison.OrdinalIgnoreCase) Then
+                Using S = TargetAssembly.GetManifestResourceStream(ResName)
+                    If S Is Nothing Then Continue For
+                    Using Sr As New StreamReader(S, Encoding.UTF8)
+                        LoadTranslationsFromJson(Sr.ReadToEnd())
+                    End Using
+                End Using
+                Exit For
+            End If
+        Next
+    End Sub
+
+    Public Function NormalizeLineBreaks(Input As String) As String
+        If String.IsNullOrEmpty(Input) Then Return ""
+        Return Input.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+    End Function
+
+    Public Function ContainsCjk(Text As String) As Boolean
+        If String.IsNullOrEmpty(Text) Then Return False
+        For Each Ch In Text
+            Dim Code = AscW(Ch)
+            If Code >= &H4E00 AndAlso Code <= &H9FFF Then Return True
+        Next
+        Return False
+    End Function
+
+    ''' <summary>
+    ''' 将中文界面文本翻译为当前所选语言（简体中文模式原样返回）。
+    ''' </summary>
+    Public Function TranslateText(Text As String) As String
+        If CurrentLanguage <> LauncherLanguage.English OrElse String.IsNullOrEmpty(Text) Then Return Text
+        If Not ContainsCjk(Text) Then Return Text
+
+        Dim Norm = NormalizeLineBreaks(Text)
+        Dim Found As String = Nothing
+        If Translations.TryGetValue(Norm, Found) Then Return Found
+
+        Dim Trimmed = Norm.Trim()
+        If Trimmed <> Norm AndAlso Translations.TryGetValue(Trimmed, Found) Then
+            Dim LeadLen = Norm.Length - Norm.TrimStart().Length
+            Dim TrailLen = Norm.Length - Norm.TrimEnd().Length
+            Return Norm.Substring(0, LeadLen) & Found & If(TrailLen > 0, Norm.Substring(Norm.Length - TrailLen), "")
+        End If
+
+        Dim DynamicResult = TranslateDynamicPatterns(Norm)
+        If Not String.Equals(DynamicResult, Norm, StringComparison.Ordinal) Then
+            Return DynamicResult
+        End If
+
+        '按换行逐段翻译复合提示或报错正文
+        If Norm.IndexOf(vbLf(0)) >= 0 Then
+            Dim Lines = Norm.Split(vbLf(0))
+            Dim AnyChanged As Boolean = False
+            For i As Integer = 0 To Lines.Length - 1
+                Dim LineRes = TranslateSingleLineFallback(Lines(i))
+                If LineRes <> Lines(i) Then
+                    Lines(i) = LineRes
+                    AnyChanged = True
+                End If
+            Next
+            If AnyChanged Then Return String.Join(Environment.NewLine, Lines)
+        End If
+
+        Return Text
+    End Function
+
+    Private Function TranslateSingleLineFallback(Line As String) As String
+        If String.IsNullOrEmpty(Line) OrElse Not ContainsCjk(Line) Then Return Line
+        Dim Found As String = Nothing
+        If Translations.TryGetValue(Line, Found) Then Return Found
+        Dim Trimmed = Line.Trim()
+        If Trimmed <> Line AndAlso Translations.TryGetValue(Trimmed, Found) Then
+            Dim LeadLen = Line.Length - Line.TrimStart().Length
+            Dim TrailLen = Line.Length - Line.TrimEnd().Length
+            Return Line.Substring(0, LeadLen) & Found & If(TrailLen > 0, Line.Substring(Line.Length - TrailLen), "")
+        End If
+        Return TranslateDynamicPatterns(Line)
+    End Function
+
+    Private Function TranslateDynamicPatterns(Text As String) As String
+        Dim M As Match
+
+        M = Regex.Match(Text, "^PCL Linking修改版\s+(v\s*[\w.\-]+)\s*·\s*基于\s*PCL\s*2\.14\.0\.0\s*开源版二次开发$")
+        If M.Success Then Return $"PCL Linking {M.Groups(1).Value} · Forked from PCL 2.14.0.0 Open Source"
+
+        M = Regex.Match(Text, "^版本设置\s*-\s*(.+)$")
+        If M.Success Then Return $"Instance Settings - {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^好友\s*\(([^)]+)\)$")
+        If M.Success Then Return $"Friends ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^白名单列表\s*\((\d+)\s*人\)$")
+        If M.Success Then Return $"Whitelist ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^管理员列表\s*\(OP\s*·\s*(\d+)\s*人\)$")
+        If M.Success Then Return $"Operators (OP · {M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^(\d+)\s*人$")
+        If M.Success Then Return $"{M.Groups(1).Value} Players"
+
+        M = Regex.Match(Text, "^2\s+人$")
+        If M.Success Then Return "2 Players"
+
+        M = Regex.Match(Text, "^(\d+)\s*分钟$")
+        If M.Success Then Return $"{M.Groups(1).Value} min"
+
+        M = Regex.Match(Text, "^背景图片（(\d+)\s*张）$")
+        If M.Success Then Return $"Background Images ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^关注服务器列表\s*\((\d+)\)$")
+        If M.Success Then Return $"Watched Servers ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^历史快照列表\s*\((\d+)\)$")
+        If M.Success Then Return $"Snapshots ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^已绑定快捷键\s*\((\d+)\)$")
+        If M.Success Then Return $"Bound Hotkeys ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^当前清单已添加的资源\s*\((\d+)\s*项\)$")
+        If M.Success Then Return $"Preset Resources ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^已选择\s*(\d+)\s*个文件$")
+        If M.Success Then Return $"{M.Groups(1).Value} files selected"
+
+        M = Regex.Match(Text, "^共\s*(\d+)\s*项说明$")
+        If M.Success Then Return $"{M.Groups(1).Value} topics"
+
+        M = Regex.Match(Text, "^已扫描\s*(\d+)\s*个插件（已启用\s*(\d+)\s*个，已禁用\s*(\d+)\s*个）$")
+        If M.Success Then Return $"Scanned {M.Groups(1).Value} plugins ({M.Groups(2).Value} enabled, {M.Groups(3).Value} disabled)"
+
+        M = Regex.Match(Text, "^共发现\s*(\d+)\s*个世界存档（点击卡片可编辑规则与数据包）$")
+        If M.Success Then Return $"Found {M.Groups(1).Value} worlds (click a card to edit rules & datapacks)"
+
+        M = Regex.Match(Text, "^发现\s*(\d+)\s*个可升级的服务端插件：$")
+        If M.Success Then Return $"Found {M.Groups(1).Value} updatable server plugins:"
+
+        M = Regex.Match(Text, "^状态：(.+)$")
+        If M.Success Then Return $"Status: {TranslateText(M.Groups(1).Value)}"
+
+        M = Regex.Match(Text, "^内存：(.+)$")
+        If M.Success Then Return $"Memory: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^运行时长：(.+)$")
+        If M.Success Then Return $"Uptime: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^插件/Mod：(.+)$")
+        If M.Success Then Return $"Plugins/Mods: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^当前\s+(v?\s*[\w.\-]+)\s+已是最新正式版（GitHub 最新：([^）]+)）。$")
+        If M.Success Then Return $"Current version {M.Groups(1).Value} is up to date (GitHub latest: {M.Groups(2).Value})."
+
+        M = Regex.Match(Text, "^发现新版本：([^\s（]+)（当前\s+([^）]+)），点击检查可打开下载页。$")
+        If M.Success Then Return $"Update available: {M.Groups(1).Value} (current: {M.Groups(2).Value}). Click Check Update to view."
+
+        M = Regex.Match(Text, "^搜索\s*(.+)$")
+        If M.Success Then
+            Dim SubTarget = M.Groups(1).Value.Trim()
+            Dim TranslatedSub = If(Translations.ContainsKey(SubTarget), Translations(SubTarget), SubTarget)
+            Return $"Search {TranslatedSub}"
+        End If
+
+        M = Regex.Match(Text, "^已加载\s*(\d+)\s*个\s*Mod(.*)$")
+        If M.Success Then Return $"{M.Groups(1).Value} Mods loaded{M.Groups(2).Value}"
+
+        M = Regex.Match(Text, "^关于\s+(.+)$")
+        If M.Success Then Return $"About {M.Groups(1).Value}"
+
+        If Text.StartsWith("正在获取", StringComparison.Ordinal) AndAlso Text.EndsWith("列表", StringComparison.Ordinal) Then
+            Return "Fetching list..."
+        End If
+        If Text.StartsWith("正在安装 ", StringComparison.Ordinal) Then Return "Installing " & Text.Substring("正在安装 ".Length)
+        If Text.StartsWith("正在下载 ", StringComparison.Ordinal) Then Return "Downloading " & Text.Substring("正在下载 ".Length)
+        If Text.StartsWith("正在加载 ", StringComparison.Ordinal) Then Return "Loading " & Text.Substring("正在加载 ".Length)
+
+        '局部高频后缀替换（用于拼接型长句）
+        Dim Replaced = Text
+        If Replaced.Contains("（当前选中）") Then Replaced = Replaced.Replace("（当前选中）", " (Selected)")
+        If Replaced.Contains("（已禁用）") Then Replaced = Replaced.Replace("（已禁用）", " (Disabled)")
+        If Replaced.Contains("[26.1+ 格式]") Then Replaced = Replaced.Replace("[26.1+ 格式]", "[26.1+ Format]")
+        If Replaced.Contains("[传统 NBT 格式]") Then Replaced = Replaced.Replace("[传统 NBT 格式]", "[Legacy NBT]")
+        If Replaced.Contains("世界种子:") Then Replaced = Replaced.Replace("世界种子:", "Seed:")
+        If Replaced.Contains(" · 点击右侧图标切换启用状态或删除") Then
+            Replaced = Replaced.Replace("文件夹数据包", "Folder Datapack").Replace("ZIP 压缩数据包", "ZIP Datapack").Replace(" · 点击右侧图标切换启用状态或删除", " · Click icons on the right to toggle or delete")
+        End If
+        Return Replaced
+    End Function
+
+End Module

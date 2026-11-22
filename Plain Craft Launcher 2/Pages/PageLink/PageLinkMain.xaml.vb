@@ -2298,6 +2298,32 @@ Public Class PageLinkMain
                     RunInUi(Sub() Hint($"接收文件失败：{ErrMsg}", HintType.Red))
                 End If
             End Sub,
+            .ResolveHostModFile =
+            Function(FileName) As String
+                Dim TargetInst = McInstanceSelected
+                If TargetInst Is Nothing Then Return Nothing
+                Dim ModsDir = TargetInst.PathIndie & "mods\"
+                If Not IO.Directory.Exists(ModsDir) Then Return Nothing
+                For Each FilePath In IO.Directory.GetFiles(ModsDir, "*", IO.SearchOption.TopDirectoryOnly)
+                    If IO.Path.GetFileName(FilePath).Equals(FileName, StringComparison.OrdinalIgnoreCase) Then
+                        Return FilePath
+                    End If
+                Next
+                Return Nothing
+            End Function,
+            .PackHostConfigZip =
+            Function() As String
+                Dim TargetInst = McInstanceSelected
+                If TargetInst Is Nothing Then Return Nothing
+                Dim ConfigDir = TargetInst.PathIndie & "config\"
+                If Not IO.Directory.Exists(ConfigDir) OrElse Not IO.Directory.EnumerateFiles(ConfigDir, "*", IO.SearchOption.AllDirectories).Any() Then
+                    Return Nothing
+                End If
+                IO.Directory.CreateDirectory(PathTemp & "Cache\")
+                Dim TmpZip = PathTemp & $"Cache\HostConfig_{GetUuid()}.zip"
+                EasyTierSideChannelCore.PackDirectoryToZip(ConfigDir, TmpZip, SkipSessionLock:=False, MaxSourceBytes:=128L * 1024 * 1024)
+                Return TmpZip
+            End Function,
             .OnLog = Sub(Msg) Logger.Info($"[LinkSideHost] {Msg}")
         }
         Try
@@ -2325,10 +2351,30 @@ Public Class PageLinkMain
             Dim ManifestJson = EasyTierSideChannelCore.RequestModManifest(ClientControlPort, NetworkSecret, TimeoutMs:=15000)
             If ExpectedSessionId <> SideChannelSessionId OrElse LinkState <> LinkStates.Finished Then Return
             Dim HostManifest = Newtonsoft.Json.JsonConvert.DeserializeObject(Of ModFriends.ModSyncManifest)(ManifestJson)
+            Dim SessSnapshot = ExpectedSessionId
+            Dim PortSnapshot = ClientControlPort
+            Dim SecretSnapshot = NetworkSecret
+            Dim P2pPullMod As Func(Of String, String, Boolean) =
+            Function(ModFileName As String, DestPath As String) As Boolean
+                Try
+                    SetSideChannelStatus($"正在经虚网 P2P 拉取房主 Mod「{ModFileName}」…")
+                    EasyTierSideChannelCore.PullModFileToPath(
+                        PortSnapshot, SecretSnapshot, ModFileName, DestPath,
+                        Sub(DoneB, TotalB)
+                            Dim Pct = If(TotalB > 0, Math.Min(100, CInt(DoneB * 100L \ TotalB)), 0)
+                            SetSideChannelStatus($"正在 P2P 同步 Mod「{ModFileName}」：{Pct}%")
+                        End Sub)
+                    Return True
+                Catch p2pEx As Exception
+                    Logger.Warn(p2pEx, $"虚网 P2P 拉取房主 Mod 失败：{ModFileName}")
+                    Return False
+                End Try
+            End Function
             PageFriends.StartFriendModSyncDiff(
                 HostManifest,
                 SilentIfSynced:=SilentIfSynced,
-                OnStatusUpdate:=Sub(StatusText) SetSideChannelStatus(StatusText))
+                OnStatusUpdate:=Sub(StatusText) SetSideChannelStatus(StatusText),
+                P2pPullMod:=P2pPullMod)
         Catch ex As Exception
             Logger.Warn(ex, "虚网 Mod 一致性握手核对失败")
             If ExpectedSessionId <> SideChannelSessionId OrElse LinkState <> LinkStates.Finished Then Return
@@ -2483,7 +2529,8 @@ Public Class PageLinkMain
         Dim Options As IMyRadio() = {
             New MyRadioBox With {.Text = "从房主拉取共享的世界存档 / 大文件"},
             New MyRadioBox With {.Text = "发送当前实例的世界存档给房主（存档接力 / 备份）"},
-            New MyRadioBox With {.Text = "发送本地任意大文件给房主"}
+            New MyRadioBox With {.Text = "发送本地任意大文件给房主"},
+            New MyRadioBox With {.Text = "从房主虚网 P2P 同步当前实例 config/ 配置文件（自动备份旧配置）"}
         }
         Dim OpIdx = MyMsgBoxSelect(Options, "成员虚网直传（端到端 AES-256 加密，不限文件体积）：", "确定", "取消")
         If OpIdx Is Nothing Then Return
@@ -2591,6 +2638,44 @@ Public Class PageLinkMain
                     RunInUi(Sub() Hint($"发送文件失败：{ex.Message}", HintType.Red))
                 End Try
             End Sub, "Push File To Host")
+        ElseIf OpIdx.Value = 3 Then
+            Dim TargetInst = McInstanceSelected
+            If TargetInst Is Nothing Then
+                Hint("请先选择你要接收 config/ 的本地游戏实例！", HintType.Red)
+                Return
+            End If
+            If McInstanceLock.IsLocked(TargetInst) Then
+                Hint($"实例「{TargetInst.Name}」正在运行或被锁定，请先退出游戏再同步 config！", HintType.Red)
+                Return
+            End If
+            Dim ConfirmCfg = MyMsgBox(
+                $"即将从房主通过 EasyTier 虚网拉取当前实例的 config/ 文件夹并写入「{TargetInst.Name}」。{vbCrLf}{vbCrLf}" &
+                "覆盖前会自动把现有 config/ 备份到实例 PCL Linking\ConfigSyncBackups\（滚动保留最近 3 份）。",
+                "虚网 P2P 同步配置文件", "确认拉取并应用", "取消")
+            If ConfirmCfg <> 1 Then Return
+
+            Dim DestConfigDir = TargetInst.PathIndie & "config\"
+            Dim BackupRootDir = TargetInst.PathIndie & "PCL Linking\ConfigSyncBackups\"
+            Dim PortSnap = ClientControlPort
+            Dim SecretSnap = NetworkSecret
+            SetSideChannelStatus("正在向房主请求打包 config/ 配置…")
+            RunInNewThread(
+            Sub()
+                Try
+                    Dim Res = EasyTierSideChannelCore.PullConfigPackToDirectory(
+                        PortSnap, SecretSnap, DestConfigDir, BackupRootDir,
+                        Sub(DoneB, TotalB)
+                            Dim Pct = If(TotalB > 0, Math.Min(100, CInt(DoneB * 100L \ TotalB)), 0)
+                            SetSideChannelStatus($"正在 P2P 接收 config 配置：{Pct}%")
+                        End Sub)
+                    Dim BakNote = If(String.IsNullOrEmpty(Res.BackupZipPath), "", $"，旧配置已备份为 {IO.Path.GetFileName(Res.BackupZipPath)}")
+                    SetSideChannelStatus($"config 同步完成：已写入 {Res.ExtractedFiles} 个配置文件{BakNote} ✓")
+                    RunInUi(Sub() Hint($"已完成 config/ 虚网同步（{Res.ExtractedFiles} 个文件{BakNote}）！", HintType.Green))
+                Catch cfgEx As Exception
+                    SetSideChannelStatus($"config 同步失败：{cfgEx.Message}")
+                    RunInUi(Sub() Hint($"拉取房主 config/ 失败：{cfgEx.Message}", HintType.Red))
+                End Try
+            End Sub, "Pull Host Config P2P")
         End If
     End Sub
 

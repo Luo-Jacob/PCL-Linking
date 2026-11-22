@@ -30,8 +30,34 @@ Public Class PageInstanceSaves
     Private SelectedFolderPath As String = Nothing
     Private LoadGeneration As Integer = 0
     Private IsSaving As Boolean = False
+    Private ReadOnly GameRuleCheckboxes As New Dictionary(Of String, MyCheckBox)(StringComparer.OrdinalIgnoreCase)
+    Private CurrentRescuePlayers As New List(Of ModNbt.WorldPlayerNbtInfo)
+
+    Private Sub EnsureGameRuleCheckboxesBuilt()
+        If PanCommonGameRules Is Nothing OrElse GameRuleCheckboxes.Count > 0 Then Return
+        For Each Rule In ModNbt.CommonWorldGameRules
+            Dim Cb As New MyCheckBox With {
+                .Text = Rule.Title,
+                .ToolTip = Rule.Description,
+                .Margin = New Thickness(0, 0, 18, 6),
+                .MinWidth = 220
+            }
+            GameRuleCheckboxes(Rule.Key) = Cb
+            PanCommonGameRules.Children.Add(Cb)
+        Next
+    End Sub
+
+    Private Function EnsureSelectedWorldWritable() As Boolean
+        Dim Instance = If(PageInstanceLeft.Instance, McInstanceSelected)
+        If Instance IsNot Nothing AndAlso McInstanceLock.IsLocked(Instance) Then
+            Hint("当前实例正在运行或被锁定，请先退出游戏后再修改存档 NBT！", HintType.Red)
+            Return False
+        End If
+        Return True
+    End Function
 
     Private Sub PageInstanceSaves_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+        EnsureGameRuleCheckboxesBuilt()
         PanBack.ScrollToHome()
         LoadWorldsAsync()
     End Sub
@@ -330,6 +356,30 @@ Public Class PageInstanceSaves
 
         BtnCopySeed.IsEnabled = (Entry.SeedText <> "未知")
         BtnSaveNbt.IsEnabled = Not Entry.HasError
+        BtnEditSeedOrRule.IsEnabled = Not Entry.HasError
+
+        EnsureGameRuleCheckboxesBuilt()
+        Dim LevelDat = Path.Combine(Entry.FolderPath, "level.dat")
+        Dim RuleValues As Dictionary(Of String, String) = Nothing
+        If Not Entry.HasError AndAlso File.Exists(LevelDat) Then
+            Try
+                RuleValues = ModNbt.ReadWorldGameRules(LevelDat)
+            Catch
+                RuleValues = New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            End Try
+        Else
+            RuleValues = New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        End If
+        For Each Rule In ModNbt.CommonWorldGameRules
+            Dim Cb As MyCheckBox = Nothing
+            If GameRuleCheckboxes.TryGetValue(Rule.Key, Cb) Then
+                Dim RawVal As String = Nothing
+                If Not RuleValues.TryGetValue(Rule.Key, RawVal) OrElse String.IsNullOrWhiteSpace(RawVal) Then
+                    RawVal = Rule.DefaultValue
+                End If
+                Cb.Checked = RawVal.Equals("true", StringComparison.OrdinalIgnoreCase) OrElse RawVal = "1"
+            End If
+        Next
 
         RenderPlayerOverviewAsync(Entry)
         RenderDatapacksList(Entry)
@@ -461,6 +511,7 @@ Public Class PageInstanceSaves
     Private Sub BtnSaveNbt_Click() Handles BtnSaveNbt.Click
         Dim Entry = GetSelectedWorld()
         If Entry Is Nothing OrElse IsSaving Then Return
+        If Not EnsureSelectedWorldWritable() Then Return
         Dim NewName = TextEditLevelName.Text.Trim()
         If String.IsNullOrEmpty(NewName) Then
             Hint("存档名称不能为空！", HintType.Red)
@@ -476,37 +527,40 @@ Public Class PageInstanceSaves
         Dim DiffIdx As Integer = Math.Max(0, Math.Min(3, ComboEditDifficulty.SelectedIndex))
         Dim AllowCheat As Byte = If(CheckAllowCommands.Checked, CByte(1), CByte(0))
         Dim LockedByte As Byte = If(CheckDifficultyLocked.Checked, CByte(1), CByte(0))
+        Dim RuleUpdates As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        For Each Kv In GameRuleCheckboxes
+            RuleUpdates(Kv.Key) = If(Kv.Value.Checked, "true", "false")
+        Next
 
         IsSaving = True
         BtnSaveNbt.IsEnabled = False
         Try
-            Dim Root = ReadNbtFile(LevelDat)
-            Dim DataTag = Root.GetCompound("Data")
-            If DataTag Is Nothing Then DataTag = Root
+            ModNbt.UpdateLevelDatFieldsAndRules(
+                LevelDat,
+                Sub(DataTag)
+                    DataTag.SetString("LevelName", NewName)
+                    DataTag.SetByte("allowCommands", AllowCheat)
+                    Dim DiffSettings = DataTag.GetCompound("difficulty_settings")
+                    Dim DataVer = DataTag.GetInt("DataVersion").GetValueOrDefault(0)
+                    If DiffSettings IsNot Nothing OrElse DataVer >= 4774 Then
+                        If DiffSettings Is Nothing Then
+                            DiffSettings = New NbtTag With {
+                                .Type = NbtTagType.Compound,
+                                .Name = "difficulty_settings",
+                                .Value = New Dictionary(Of String, NbtTag)(StringComparer.Ordinal)
+                            }
+                            DataTag.AsCompound()("difficulty_settings") = DiffSettings
+                        End If
+                        DiffSettings.SetString("difficulty", DifficultyIdToName(DiffIdx))
+                        DiffSettings.SetByte("locked", LockedByte)
+                    Else
+                        DataTag.SetByte("Difficulty", CByte(DiffIdx))
+                        DataTag.SetByte("DifficultyLocked", LockedByte)
+                    End If
+                End Sub,
+                RuleUpdates)
 
-            DataTag.SetString("LevelName", NewName)
-            DataTag.SetByte("allowCommands", AllowCheat)
-
-            Dim DiffSettings = DataTag.GetCompound("difficulty_settings")
-            Dim DataVer = DataTag.GetInt("DataVersion").GetValueOrDefault(0)
-            If DiffSettings IsNot Nothing OrElse DataVer >= 4774 Then
-                If DiffSettings Is Nothing Then
-                    DiffSettings = New NbtTag With {
-                        .Type = NbtTagType.Compound,
-                        .Name = "difficulty_settings",
-                        .Value = New Dictionary(Of String, NbtTag)(StringComparer.Ordinal)
-                    }
-                    DataTag.AsCompound()("difficulty_settings") = DiffSettings
-                End If
-                DiffSettings.SetString("difficulty", DifficultyIdToName(DiffIdx))
-                DiffSettings.SetByte("locked", LockedByte)
-            Else
-                DataTag.SetByte("Difficulty", CByte(DiffIdx))
-                DataTag.SetByte("DifficultyLocked", LockedByte)
-            End If
-
-            WriteNbtFile(LevelDat, Root, BackupOld:=True)
-            Hint("已保存存档设置到 level.dat（旧文件已备份为 level.dat_old）", HintType.Green)
+            Hint("已保存存档设置与 GameRules 到 level.dat（已自动备份 level.dat_old）", HintType.Green)
             LoadWorldsAsync()
         Catch ex As Exception
             Logger.Error(ex, "写入 level.dat 失败")
@@ -514,6 +568,53 @@ Public Class PageInstanceSaves
         Finally
             IsSaving = False
             BtnSaveNbt.IsEnabled = True
+        End Try
+    End Sub
+
+    Private Sub BtnEditSeedOrRule_Click() Handles BtnEditSeedOrRule.Click
+        Dim Entry = GetSelectedWorld()
+        If Entry Is Nothing OrElse Entry.HasError Then Return
+        If Not EnsureSelectedWorldWritable() Then Return
+        Dim LevelDat As String = Path.Combine(Entry.FolderPath, "level.dat")
+        If Not File.Exists(LevelDat) Then Return
+
+        Dim Options As IMyRadio() = {
+            New MyRadioBox With {.Text = "修改自定义游戏规则 (GameRule 键值对，例如 randomTickSpeed / playersSleepingPercentage)"},
+            New MyRadioBox With {.Text = "修改世界种子 (Seed)（注：仅对尚未生成的新区块生效）"}
+        }
+        Dim Picked = MyMsgBoxSelect(Options, $"高级 NBT 编辑 — {Entry.LevelName}：", "下一步", "取消")
+        If Picked Is Nothing Then Return
+
+        Try
+            If Picked.Value = 0 Then
+                Dim CurrentRules = ModNbt.ReadWorldGameRules(LevelDat)
+                Dim RuleKey = MyMsgBoxInput("输入 GameRule 规则名",
+                    "常见数值规则示例：randomTickSpeed（默认 3）、playersSleepingPercentage（默认 100）、spawnRadius（默认 10）", "randomTickSpeed")
+                If String.IsNullOrWhiteSpace(RuleKey) Then Return
+                Dim CleanKey = RuleKey.Trim()
+                Dim ExistingVal = ""
+                CurrentRules.TryGetValue(CleanKey, ExistingVal)
+                Dim RuleVal = MyMsgBoxInput($"设置规则 {CleanKey} 的值", $"当前值：{If(String.IsNullOrEmpty(ExistingVal), "(未显式写入，使用原版默认)", ExistingVal)}", ExistingVal)
+                If RuleVal Is Nothing Then Return
+                Dim Updates As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase) From {{CleanKey, RuleVal.Trim()}}
+                ModNbt.UpdateLevelDatFieldsAndRules(LevelDat, Nothing, Updates)
+                Hint($"已更新规则 {CleanKey} = {RuleVal.Trim()}（已备份 level.dat_old）！", HintType.Green)
+                RenderSelectedDetail()
+            Else
+                Dim RawSeed = MyMsgBoxInput("修改世界种子 (64 位整数)", "警告：修改种子只会影响之后新探索生成的新区块，已生成地形不会改变。当前：" & Entry.SeedText, If(Entry.SeedText = "未知", "", Entry.SeedText))
+                If String.IsNullOrWhiteSpace(RawSeed) Then Return
+                Dim ParsedSeed As Long
+                If Not Long.TryParse(RawSeed.Trim(), ParsedSeed) Then
+                    Hint("请输入有效的 64 位整数种子（例如 -1234567890）！", HintType.Red)
+                    Return
+                End If
+                ModNbt.UpdateLevelDatFieldsAndRules(LevelDat, Nothing, Nothing, ParsedSeed)
+                Hint($"已修改世界种子为 {ParsedSeed}（已备份 level.dat_old）！", HintType.Green)
+                LoadWorldsAsync()
+            End If
+        Catch ex As Exception
+            Logger.Error(ex, "高级编辑 level.dat 失败")
+            Hint($"保存失败：{ex.Message}", HintType.Red)
         End Try
     End Sub
 
@@ -674,17 +775,64 @@ Public Class PageInstanceSaves
         Dim TargetDir = Entry.FolderPath
         LabPlayerSummary.Text = "正在解析玩家 NBT 数据..."
         LabInventorySummary.Text = ""
+        HintPlayerStuckRisk.Visibility = Visibility.Collapsed
+        ComboRescuePlayer.Items.Clear()
+        ComboRescuePlayer.IsEnabled = False
+        BtnRescuePlayer.IsEnabled = False
+        CurrentRescuePlayers = New List(Of ModNbt.WorldPlayerNbtInfo)
+
         RunInNewThread(
         Sub()
             Dim Info = ParsePlayerOverview(TargetDir)
+            Dim Players = ModNbt.InspectWorldPlayers(TargetDir)
             RunInUi(
             Sub()
                 Dim Current = GetSelectedWorld()
                 If Current Is Nothing OrElse Not PathUtils.IsSame(Current.FolderPath, TargetDir) Then Return
                 LabPlayerSummary.Text = Info.Summary
                 LabInventorySummary.Text = Info.Inventory
+                CurrentRescuePlayers = Players
+                ComboRescuePlayer.Items.Clear()
+                For Each P In Players
+                    Dim RiskFlag = If(P.IsStuckRisk, " [疑似卡死/虚空]", "")
+                    ComboRescuePlayer.Items.Add(New MyComboBoxItem With {
+                        .Content = $"{P.DisplayName}{RiskFlag} · ({P.PosX:F0}, {P.PosY:F0}, {P.PosZ:F0})"
+                    })
+                Next
+                If ComboRescuePlayer.Items.Count > 0 Then
+                    ComboRescuePlayer.SelectedIndex = 0
+                    ComboRescuePlayer.IsEnabled = True
+                    BtnRescuePlayer.IsEnabled = True
+                End If
+                HintPlayerStuckRisk.Visibility = If(Players.Any(Function(p) p.IsStuckRisk), Visibility.Visible, Visibility.Collapsed)
             End Sub)
         End Sub, "World Player Overview")
+    End Sub
+
+    Private Sub BtnRescuePlayer_Click() Handles BtnRescuePlayer.Click
+        Dim Entry = GetSelectedWorld()
+        If Entry Is Nothing OrElse Entry.HasError Then Return
+        If Not EnsureSelectedWorldWritable() Then Return
+        Dim Idx = ComboRescuePlayer.SelectedIndex
+        If Idx < 0 OrElse Idx >= CurrentRescuePlayers.Count Then
+            Hint("请先选择要救援的玩家档案！", HintType.Blue)
+            Return
+        End If
+        Dim Target = CurrentRescuePlayers(Idx)
+        Dim ConfirmMsg = $"确定将「{Target.DisplayName}」安全传送回主世界出生点吗？{vbCrLf}{vbCrLf}" &
+                         $"当前维度：{Target.Dimension}{vbCrLf}" &
+                         $"当前坐标：({Target.PosX:F1}, {Target.PosY:F1}, {Target.PosZ:F1}) · 生命 {Target.Health:F1}{vbCrLf}{vbCrLf}" &
+                         "操作会清空坠落速度、重置火焰状态并在同目录保留 _old 原文件备份。"
+        If MyMsgBox(ConfirmMsg, "卡服玩家安全回出生点救援", "确认传送回出生点", "取消", IsWarn:=True) <> 1 Then Return
+
+        Try
+            Dim Res = ModNbt.RescueWorldPlayerToSpawn(Entry.FolderPath, Target.FilePath, Target.IsLevelDatPlayer)
+            Hint($"已将 {Target.DisplayName} 安全传送回出生点 ({Res.SpawnX:F0}, {Res.SpawnY:F0}, {Res.SpawnZ:F0})！", HintType.Green)
+            RenderPlayerOverviewAsync(Entry)
+        Catch ex As Exception
+            Logger.Error(ex, "卡服玩家回出生点救援失败")
+            Hint($"救援失败：{ex.Message}", HintType.Red)
+        End Try
     End Sub
 
     Private IsMcaBusy As Boolean = False

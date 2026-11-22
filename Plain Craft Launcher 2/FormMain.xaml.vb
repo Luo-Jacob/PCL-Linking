@@ -275,8 +275,11 @@ Public Class FormMain
             Catch ex As Exception
                 Logger.Error(ex, "初始化加载池运行失败")
             End Try
-            'PCL Linking：已移除自动更新文件的清理逻辑（不检查更新，也不会产生残留）
-            '上报
+            'PCL Linking：仅在用户主动勾选「启动时自动检查 GitHub Releases 更新」时执行一次静默检查（无任何静默下载/遥测）
+            If Settings.Get(Of Boolean)("SystemCheckUpdateOnStartup") Then
+                RunInUi(Sub() PageSetupAbout.CheckGitHubUpdateAsync(SilentIfLatest:=True))
+            End If
+            '上报（已禁用）
             Telemetry("启动")
             'PCL Linking：已移除开源版功能缺失提示
         End Sub, "初始化", ThreadPriority.Lowest)
@@ -1027,11 +1030,12 @@ Public Class FormMain
     Private Function PageNameGet(Stack As PageStackData) As String
         Select Case Stack.Page
             Case PageType.InstanceSelect
-                Return "版本选择"
+                Return LocalizationCore.TranslateText("版本选择")
             Case PageType.TaskManager
-                Return "任务管理"
+                Return LocalizationCore.TranslateText("任务管理")
             Case PageType.InstanceSetup
-                Return "版本设置 - " & If(PageInstanceLeft.Instance Is Nothing, "未知版本", PageInstanceLeft.Instance.Name)
+                Dim InstName = If(PageInstanceLeft.Instance Is Nothing, LocalizationCore.TranslateText("未知版本"), PageInstanceLeft.Instance.Name)
+                Return LocalizationCore.TranslateText("版本设置 - ") & InstName
             Case PageType.ResourceDetail
                 Return CType(Stack.Additional(0), ResourceProject).TranslatedName
             Case Else
@@ -1205,7 +1209,7 @@ Public Class FormMain
                     '子页面 → 另一个子页面，更新
                     AniStart({
                         AaOpacity(LabTitleInner, -LabTitleInner.Opacity, 130),
-                        AaCode(Sub() LabTitleInner.Text = PageName,, True),
+                        AaCode(Sub() LabTitleInner.Text = LocalizationCore.TranslateText(PageName),, True),
                         AaOpacity(LabTitleInner, 1, 150, 30)
                     }, "FrmMain Titlebar SubLayer")
                     If PageStack.Contains(Stack) Then

@@ -47,8 +47,8 @@ Public Module ModMain
                 '    HintWaiting.RemoveAt(0)
                 '    Continue Do
                 'End If
-                '去回车
-                CurrentHint.Text = CurrentHint.Text.ReplaceLineEndings(" ", mergeMultiple:=True)
+                '去回车并按当前语言本地化
+                CurrentHint.Text = LocalizationCore.TranslateText(CurrentHint.Text.ReplaceLineEndings(" ", mergeMultiple:=True))
                 '超量提示直接忽略
                 If FrmMain.PanHint.Children.Count >= 20 Then GoTo EndHint
                 '检查是否有重复提示
@@ -248,6 +248,11 @@ EndHint:
                              Optional Button1 As String = "确定", Optional Button2 As String = "", Optional Button3 As String = "",
                              Optional IsWarn As Boolean = False, Optional HighLight As Boolean = True, Optional ForceWait As Boolean = False,
                              Optional Button1Action As Action = Nothing, Optional Button2Action As Action = Nothing, Optional Button3Action As Action = Nothing) As Integer
+        Caption = LocalizationCore.TranslateText(Caption)
+        Title = LocalizationCore.TranslateText(Title)
+        Button1 = LocalizationCore.TranslateText(Button1)
+        If Not String.IsNullOrEmpty(Button2) Then Button2 = LocalizationCore.TranslateText(Button2)
+        If Not String.IsNullOrEmpty(Button3) Then Button3 = LocalizationCore.TranslateText(Button3)
         '将弹窗列入队列
         Dim Converter As New MyMsgBoxConverter With {.Type = MyMsgBoxType.Text, .Button1 = Button1, .Button2 = Button2, .Button3 = Button3, .Text = Caption, .IsWarn = IsWarn, .Title = Title, .HighLight = HighLight, .ForceWait = ForceWait, .Button1Action = Button1Action, .Button2Action = Button2Action, .Button3Action = Button3Action}
         If Button2.Length > 0 OrElse ForceWait Then
@@ -293,6 +298,11 @@ EndHint:
     ''' <param name="Button2">显示的第二个按钮，默认为“取消”。</param>
     ''' <param name="IsWarn">是否为警告弹窗，若为 True，弹窗配色和背景会变为红色。</param>
     Public Function MyMsgBoxInput(Title As String, Optional Text As String = Nothing, Optional DefaultInput As String = Nothing, Optional ValidateRules As Collection(Of Validate) = Nothing, Optional HintText As String = "", Optional Button1 As String = "确定", Optional Button2 As String = "取消", Optional IsWarn As Boolean = False) As String
+        Title = LocalizationCore.TranslateText(Title)
+        If Not String.IsNullOrEmpty(Text) Then Text = LocalizationCore.TranslateText(Text)
+        If Not String.IsNullOrEmpty(HintText) Then HintText = LocalizationCore.TranslateText(HintText)
+        Button1 = LocalizationCore.TranslateText(Button1)
+        If Not String.IsNullOrEmpty(Button2) Then Button2 = LocalizationCore.TranslateText(Button2)
         '将弹窗列入队列
         Dim Converter As New MyMsgBoxConverter With {.Text = If(Text, ""), .HintText = If(HintText, ""), .Type = MyMsgBoxType.Input, .ValidateRules = If(ValidateRules, New Collection(Of Validate)), .Button1 = Button1, .Button2 = Button2, .Content = DefaultInput, .IsWarn = IsWarn, .Title = Title}
         WaitForMsgBox(Converter)
@@ -307,6 +317,17 @@ EndHint:
     ''' <param name="Button2">显示的第二个按钮，默认为空。</param>
     ''' <param name="IsWarn">是否为警告弹窗，若为 True，弹窗配色和背景会变为红色。</param>
     Public Function MyMsgBoxSelect(Selections As IEnumerable(Of IMyRadio), Optional Title As String = "提示", Optional Button1 As String = "确定", Optional Button2 As String = "", Optional IsWarn As Boolean = False) As Integer?
+        Title = LocalizationCore.TranslateText(Title)
+        Button1 = LocalizationCore.TranslateText(Button1)
+        If Not String.IsNullOrEmpty(Button2) Then Button2 = LocalizationCore.TranslateText(Button2)
+        If Selections IsNot Nothing AndAlso LocalizationCore.IsEnglishActive() Then
+            For Each Radio In Selections
+                Dim RBox = TryCast(Radio, MyRadioBox)
+                If RBox IsNot Nothing AndAlso Not String.IsNullOrEmpty(RBox.Text) Then
+                    RBox.Text = LocalizationCore.TranslateText(RBox.Text)
+                End If
+            Next
+        End If
         '将弹窗列入队列
         Dim Converter As New MyMsgBoxConverter With {.Type = MyMsgBoxType.Select, .Button1 = Button1, .Button2 = Button2, .Content = Selections, .IsWarn = IsWarn, .Title = Title}
         WaitForMsgBox(Converter)
