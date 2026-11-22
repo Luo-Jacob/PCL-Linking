@@ -333,55 +333,14 @@ Refresh:
         End If
     End Sub
 
-    '主题（PCL Linking 重写：纯色卡直选，不显示名称，全部可用，无需赞助或解密）
-    '0-11 预设色，12 滑稽彩，13 欧皇彩（界面已移除，仅在读取旧配置时兼容），14 自定义
-    Private Const ThemeCount As Integer = 15 '色卡编号上限（不含），0-14
-
-    ''' <summary>
-    ''' 按主题编号生成预览色：0-11 取预设主色，12 彩虹，13 随机，14 跟随自定义滑条。
-    ''' </summary>
-    Private Function ThemePreviewBrush(Id As Integer) As Brush
-        Try
-            Select Case Id
-                Case 12
-                    Dim G As New LinearGradientBrush With {.StartPoint = New Point(0, 0), .EndPoint = New Point(1, 0)}
-                    For k = 0 To 5
-                        G.GradientStops.Add(New GradientStop With {.Offset = k / 5.0, .Color = New MyColor().FromHSL2(k * 60, 92, 55)})
-                    Next
-                    Return G
-                Case 13
-                    Return New MyColor().FromHSL2(New Random(Guid.NewGuid().GetHashCode()).Next(0, 360), 90, 55)
-                Case 14
-                    Return Color3
-            End Select
-            Dim Preset As Integer() = ThemePresets(Math.Max(0, Math.Min(ThemePresets.Length - 1, Id)))
-            Return New MyColor().FromHSL2(Preset(0), Preset(1), 55 + Preset(2))
-        Catch
-            Return New MyColor(19, 112, 243)
-        End Try
-    End Function
-
     Private Sub BuildThemeCards()
         Try
             If PanThemeList IsNot Nothing Then PanThemeList.Children.Clear()
             Settings.Set("UiLauncherTheme", 0)
-            RefreshThemeCards()
             RefreshCustomSliders()
         Catch ex As Exception
             Logger.Error(ex, "初始化主题状态失败")
         End Try
-    End Sub
-
-    Private Sub SelectTheme(Id As Integer)
-        Settings.Set("UiLauncherTheme", 0)
-        ThemeNow = 0
-        ThemeRefresh(0)
-        RefreshThemeCards()
-        RefreshCustomSliders()
-        CardLauncher.TriggerForceResize()
-    End Sub
-
-    Private Sub RefreshThemeCards()
     End Sub
 
     Private Sub RefreshCustomSliders()
@@ -398,17 +357,6 @@ Refresh:
         Catch ex As Exception
             Logger.Error(ex, "隐藏自定义配色控件失败")
         End Try
-    End Sub
-
-    Private Sub HSL_Change() Handles SliderLauncherHue.Change, SliderLauncherLight.Change, SliderLauncherSat.Change, SliderLauncherDelta.Change
-        If AniControlEnabled <> 0 OrElse SliderLauncherSat Is Nothing OrElse Not SliderLauncherSat.IsLoaded Then Return
-        'PCL Linking：把滑条值写回设置，再按“自定义”主题重新派生配色
-        Settings.Set("UiLauncherHue", SliderLauncherHue.Value)
-        Settings.Set("UiLauncherSat", SliderLauncherSat.Value)
-        Settings.Set("UiLauncherLight", SliderLauncherLight.Value)
-        Settings.Set("UiLauncherDelta", SliderLauncherDelta.Value)
-        ThemeRefresh()
-        RefreshThemeCards()
     End Sub
 
 #Region "功能隐藏"

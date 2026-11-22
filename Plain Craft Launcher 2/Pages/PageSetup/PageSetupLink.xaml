@@ -7,7 +7,7 @@
     <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
         <StackPanel x:Name="PanMain" Margin="25,10">
             <local:MyCard x:Name="CardArgument" Margin="0,15" Title="连接选项">
-                <StackPanel Margin="25,40,25,20">
+                <StackPanel Margin="25,40,25,20" Grid.IsSharedSizeScope="True">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
@@ -18,7 +18,7 @@
                             <RowDefinition Height="28" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="模式" Margin="0,0,25,0" />
-                        <local:MyComboBox Grid.Row="0" x:Name="ComboLatencyMode" Grid.ColumnSpan="2" local:SettingService.Key="LinkLatencyMode" Grid.Column="1">
+                        <local:MyComboBox Grid.Row="0" x:Name="ComboLatencyMode" Height="28" Grid.ColumnSpan="2" local:SettingService.Key="LinkLatencyMode" Grid.Column="1">
                             <local:MyComboBoxItem Content="优先直连" IsSelected="True" ToolTip="尽量不进行中转，而是 P2P 直连。" />
                             <local:MyComboBoxItem Content="优先低延迟" ToolTip="如果使用中转节点能降低延迟，就不进行直连。&#xa;不过，这会增加社区节点的负载……" />
                         </local:MyComboBox>
@@ -29,8 +29,11 @@
                             <ColumnDefinition Width="1*" />
                             <ColumnDefinition Width="60" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="协议偏好" Margin="0,0,25,0" />
-                        <local:MyComboBox x:Name="ComboProtocol" Grid.ColumnSpan="2" local:SettingService.Key="LinkProtocol" Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="28" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="协议偏好" Margin="0,0,25,0" />
+                        <local:MyComboBox Grid.Row="0" x:Name="ComboProtocol" Height="28" Grid.ColumnSpan="2" local:SettingService.Key="LinkProtocol" Grid.Column="1">
                             <local:MyComboBoxItem Content="优先 TCP" IsSelected="True" ToolTip="TCP 更稳定，适合网络环境较差或丢包较多的场合。" />
                             <local:MyComboBoxItem Content="优先 UDP" ToolTip="UDP 延迟更低，适合网络环境较好的场合。" />
                         </local:MyComboBox>
@@ -122,7 +125,7 @@
                 </Grid>
             </local:MyCard>
             <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.3 · 基于 PCL 2.14.0.0 开源版二次开发" />
         </StackPanel>
     </local:MyScrollViewer>
 </local:MyPageRight>

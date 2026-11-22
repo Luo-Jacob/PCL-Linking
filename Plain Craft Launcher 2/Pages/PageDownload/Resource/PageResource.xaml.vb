@@ -39,8 +39,8 @@ Public Class PageResource
         Set(Value As String)
             If _TypeNameSpaced = Value Then Return
             _TypeNameSpaced = Value
-            PanAlways.Title = $"搜索{Value}"
-            Load.Text = $"正在获取{Value}列表"
+            PanAlways.Title = LocalizationCore.TranslateText($"搜索{Value}")
+            Load.Text = LocalizationCore.TranslateText($"正在获取{Value}列表")
         End Set
     End Property
     Private _TypeNameSpaced As String = ""
@@ -67,22 +67,22 @@ Public Class PageResource
         _ConfiguredSourceType = PageType
         ComboSearchSource.Items.Clear()
         If PageType = ResourceTypes.Plugin Then
-            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "全部", .Tag = "15", .IsSelected = True})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = LocalizationCore.TranslateText("全部"), .Tag = "15", .IsSelected = True})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Modrinth", .Tag = "2"})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1"})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Hangar (PaperMC)", .Tag = "4"})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "SpigotMC", .Tag = "8"})
-            ComboSearchSource.ToolTip = "支持同时搜索 Modrinth、CurseForge、Hangar (PaperMC) 与 SpigotMC。" & vbCrLf &
-                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。"
+            ComboSearchSource.ToolTip = LocalizationCore.TranslateText("支持同时搜索 Modrinth、CurseForge、Hangar (PaperMC) 与 SpigotMC。" & vbCrLf &
+                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。")
         ElseIf PageType = ResourceTypes.Map Then
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1", .IsSelected = True})
-            ComboSearchSource.ToolTip = "地图资源当前由 CurseForge 提供。"
+            ComboSearchSource.ToolTip = LocalizationCore.TranslateText("地图资源当前由 CurseForge 提供。")
         Else
-            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "全部", .Tag = "3", .IsSelected = True})
+            ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = LocalizationCore.TranslateText("全部"), .Tag = "3", .IsSelected = True})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "Modrinth", .Tag = "2"})
             ComboSearchSource.Items.Add(New MyComboBoxItem With {.Content = "CurseForge", .Tag = "1"})
-            ComboSearchSource.ToolTip = "支持同时搜索 Modrinth 与 CurseForge。" & vbCrLf &
-                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。"
+            ComboSearchSource.ToolTip = LocalizationCore.TranslateText("支持同时搜索 Modrinth 与 CurseForge。" & vbCrLf &
+                "可在「设置 → 全局设置 → 下载选项」设置默认列出的社区来源与下载线路。")
         End If
     End Sub
 
@@ -149,7 +149,7 @@ Public Class PageResource
     End Sub
     Private Function LoaderInput() As ResourceSearcher.SearchRequest
         Dim Request As New ResourceSearcher.SearchRequest(PageType, Storage, (Page + 1) * PAGE_SIZE)
-        Dim GameVersion As String = If(TextSearchVersion.Text = "全部 (也可自行输入)", Nothing,
+        Dim GameVersion As String = If(TextSearchVersion.SelectedIndex = 0 OrElse TextSearchVersion.Text = "全部 (也可自行输入)" OrElse TextSearchVersion.Text = LocalizationCore.TranslateText("全部 (也可自行输入)"), Nothing,
             If(TextSearchVersion.Text.Contains(".") OrElse TextSearchVersion.Text.Contains("w"), TextSearchVersion.Text, Nothing))
         With Request
             .SearchText = TextSearchName.Text

@@ -215,7 +215,7 @@ Public Class PageDownloadPresets
         If TargetLoader = ModLoaders.None Then
             Dim PreviewNames = String.Join("、", ModItems.Take(4).Select(Function(x) x.Title)) & If(ModItems.Count > 4, " 等", "")
             HintLoaderCompat.Theme = MyHint.Themes.Yellow
-            HintLoaderCompat.Text = $"当前选择为「原版」，以下 {ModItems.Count} 个 Mod 无法在原版运行（装配时将跳过 Mod）：{PreviewNames}"
+            HintLoaderCompat.Text = LocalizationCore.TranslateText($"当前选择为「原版」，以下 {ModItems.Count} 个 Mod 无法在原版运行（装配时将跳过 Mod）：{PreviewNames}")
             HintLoaderCompat.Visibility = Visibility.Visible
             If ShowToast Then Hint($"切换为「原版」：清单中的 {ModItems.Count} 个 Mod 将不兼容！", HintType.Red)
             Return
@@ -244,12 +244,12 @@ Public Class PageDownloadPresets
         Dim Pack = CurrentPreset
         PanPresetItems.Children.Clear()
         If Pack Is Nothing Then
-            CardPresetItems.Title = "当前清单已添加的资源 (0 项)"
+            CardPresetItems.Title = LocalizationCore.TranslateText("当前清单已添加的资源 (0 项)")
             HintEmptyItems.Visibility = Visibility.Visible
             CheckLoaderCompatibility(ShowToast:=False)
             Return
         End If
-        CardPresetItems.Title = $"当前清单已添加的资源 ({Pack.Items.Count} 项)"
+        CardPresetItems.Title = LocalizationCore.TranslateText($"当前清单已添加的资源 ({Pack.Items.Count} 项)")
         HintEmptyItems.Visibility = If(Pack.Items.Any(), Visibility.Collapsed, Visibility.Visible)
         Dim SelectedLoader = GetSelectedDeployLoader()
         For Each Entry In Pack.Items.ToList()
@@ -675,6 +675,55 @@ Public Class PageDownloadPresets
         Catch ex As Exception
             Hint($"导出失败：{ex.Message}", HintType.Red)
         End Try
+    End Sub
+
+    Private Sub BtnExtractInstancePreset_Click() Handles BtnExtractInstancePreset.Click
+        If McInstanceSelected Is Nothing Then
+            Hint("请先在主页选择一个当前 Minecraft 实例！", HintType.Red)
+            Return
+        End If
+        Dim CaptureInst = McInstanceSelected
+        Dim ChosenName As String = MyMsgBoxInput(
+            Title:="提取当前实例为常用清单",
+            Text:=LocalizationCore.TranslateText($"将扫描实例「{CaptureInst.Name}」的 mods 与 resourcepacks 目录，并通过 Modrinth / CurseForge 匹配生成常用清单。{vbCrLf}请输入要保存的新清单名称："),
+            DefaultInput:=$"{CaptureInst.Name} 清单",
+            ValidateRules:=New ObjectModel.Collection(Of Validate) From {New ValidateNullOrWhiteSpace})
+        If String.IsNullOrWhiteSpace(ChosenName) Then Return
+
+        BtnExtractInstancePreset.IsEnabled = False
+        BtnExtractInstancePreset.Text = LocalizationCore.TranslateText("正在提取…")
+        Hint("正在扫描当前实例的 Mod 与材质包并联网匹配……", HintType.Blue)
+
+        RunInNewThread(
+        Sub()
+            Dim Res = ModPreset.ExtractPresetFromInstance(CaptureInst)
+            RunInUi(
+            Sub()
+                BtnExtractInstancePreset.IsEnabled = True
+                BtnExtractInstancePreset.Text = LocalizationCore.TranslateText("提取当前实例的 Mod 与材质包为清单")
+                If Not String.IsNullOrEmpty(Res.ErrorMsg) Then
+                    Hint(Res.ErrorMsg, HintType.Red)
+                    Return
+                End If
+                If Res.Pack Is Nothing OrElse Not Res.Pack.Items.Any() Then
+                    Hint($"未能从 Modrinth / CurseForge 匹配到「{CaptureInst.Name}」的线上资源（可能均为本地自制或离线文件）。", HintType.Red)
+                    Return
+                End If
+
+                Res.Pack.Name = ChosenName.Trim()
+                Presets.Add(Res.Pack)
+                CurrentPresetId = Res.Pack.Id
+                SavePresetPacks(Presets)
+                RefreshPresetCombo()
+                RefreshCurrentPresetView()
+
+                Dim SummaryMsg As String = $"已从「{CaptureInst.Name}」提取清单「{Res.Pack.Name}」：{Res.MatchedMods} 个 Mod、{Res.MatchedResourcePacks} 个材质包"
+                If Res.UnmatchedCount > 0 Then
+                    SummaryMsg &= $"（另有 {Res.UnmatchedCount} 个未在平台匹配的本地文件已跳过）"
+                End If
+                Hint(SummaryMsg, HintType.Green)
+            End Sub)
+        End Sub, "Extract Instance Preset")
     End Sub
 
     Private Sub BtnImportPreset_Click() Handles BtnImportPreset.Click

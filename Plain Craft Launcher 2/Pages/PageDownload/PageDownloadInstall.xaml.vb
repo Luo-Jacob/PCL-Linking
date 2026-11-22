@@ -191,7 +191,7 @@ Public Class PageDownloadInstall
         If SelectedOptiFine Is Nothing Then
             BtnOptiFineClear.Visibility = Visibility.Collapsed
             ImgOptiFine.Visibility = Visibility.Collapsed
-            LabOptiFine.Text = If(OptiFineError, "可以添加")
+            LabOptiFine.Text = LocalizationCore.TranslateText(If(OptiFineError, "可以添加"))
             LabOptiFine.Foreground = ColorGray4
         Else
             BtnOptiFineClear.Visibility = Visibility.Visible
@@ -211,7 +211,7 @@ Public Class PageDownloadInstall
             If SelectedLiteLoader Is Nothing Then
                 BtnLiteLoaderClear.Visibility = Visibility.Collapsed
                 ImgLiteLoader.Visibility = Visibility.Collapsed
-                LabLiteLoader.Text = If(LiteLoaderError, "可以添加")
+                LabLiteLoader.Text = LocalizationCore.TranslateText(If(LiteLoaderError, "可以添加"))
                 LabLiteLoader.Foreground = ColorGray4
             Else
                 BtnLiteLoaderClear.Visibility = Visibility.Visible
@@ -232,7 +232,7 @@ Public Class PageDownloadInstall
             If SelectedForge Is Nothing Then
                 BtnForgeClear.Visibility = Visibility.Collapsed
                 ImgForge.Visibility = Visibility.Collapsed
-                LabForge.Text = If(ForgeError, "可以添加")
+                LabForge.Text = LocalizationCore.TranslateText(If(ForgeError, "可以添加"))
                 LabForge.Foreground = ColorGray4
             Else
                 BtnForgeClear.Visibility = Visibility.Visible
@@ -253,7 +253,7 @@ Public Class PageDownloadInstall
             If SelectedNeoForge Is Nothing Then
                 BtnNeoForgeClear.Visibility = Visibility.Collapsed
                 ImgNeoForge.Visibility = Visibility.Collapsed
-                LabNeoForge.Text = If(NeoForgeError, "可以添加")
+                LabNeoForge.Text = LocalizationCore.TranslateText(If(NeoForgeError, "可以添加"))
                 LabNeoForge.Foreground = ColorGray4
             Else
                 BtnNeoForgeClear.Visibility = Visibility.Visible
@@ -274,7 +274,7 @@ Public Class PageDownloadInstall
             If SelectedFabric Is Nothing Then
                 BtnFabricClear.Visibility = Visibility.Collapsed
                 ImgFabric.Visibility = Visibility.Collapsed
-                LabFabric.Text = If(FabricError, "可以添加")
+                LabFabric.Text = LocalizationCore.TranslateText(If(FabricError, "可以添加"))
                 LabFabric.Foreground = ColorGray4
             Else
                 BtnFabricClear.Visibility = Visibility.Visible
@@ -295,7 +295,7 @@ Public Class PageDownloadInstall
             If SelectedFabricApi Is Nothing Then
                 BtnFabricApiClear.Visibility = Visibility.Collapsed
                 ImgFabricApi.Visibility = Visibility.Collapsed
-                LabFabricApi.Text = If(FabricApiError, "可以添加")
+                LabFabricApi.Text = LocalizationCore.TranslateText(If(FabricApiError, "可以添加"))
                 LabFabricApi.Foreground = ColorGray4
             Else
                 BtnFabricApiClear.Visibility = Visibility.Visible
@@ -316,7 +316,7 @@ Public Class PageDownloadInstall
             If SelectedOptiFabric Is Nothing Then
                 BtnOptiFabricClear.Visibility = Visibility.Collapsed
                 ImgOptiFabric.Visibility = Visibility.Collapsed
-                LabOptiFabric.Text = If(OptiFabricError, "可以添加")
+                LabOptiFabric.Text = LocalizationCore.TranslateText(If(OptiFabricError, "可以添加"))
                 LabOptiFabric.Foreground = ColorGray4
             Else
                 BtnOptiFabricClear.Visibility = Visibility.Visible
@@ -503,14 +503,14 @@ Public Class PageDownloadInstall
             '清空当前
             PanMinecraft.Children.Clear()
             '添加最新版本
-            Dim CardInfo As New MyCard With {.Title = "最新版本", .Margin = New Thickness(0, 15, 0, 15)}
+            Dim CardInfo As New MyCard With {.Title = LocalizationCore.TranslateText("最新版本"), .Margin = New Thickness(0, 15, 0, 15)}
             Dim PinnedVersions As New List(Of JObject)
             Dim Release As JObject = Dict("正式版")(0).DeepClone()
-            Release("lore") = "最新正式版，发布于 " & Release("releaseTime").Value(Of Date).ToString("yyyy'/'MM'/'dd HH':'mm")
+            Release("lore") = LocalizationCore.TranslateText("最新正式版，发布于 " & Release("releaseTime").Value(Of Date).ToString("yyyy'/'MM'/'dd HH':'mm"))
             PinnedVersions.Add(Release)
             If Dict("正式版")(0)("releaseTime").Value(Of Date) < Dict("预览版")(0)("releaseTime").Value(Of Date) Then
                 Dim Snapshot As JObject = Dict("预览版")(0).DeepClone()
-                Snapshot("lore") = "最新预览版，发布于 " & Snapshot("releaseTime").Value(Of Date).ToString("yyyy'/'MM'/'dd HH':'mm")
+                Snapshot("lore") = LocalizationCore.TranslateText("最新预览版，发布于 " & Snapshot("releaseTime").Value(Of Date).ToString("yyyy'/'MM'/'dd HH':'mm"))
                 PinnedVersions.Add(Snapshot)
             End If
             Dim PanInfo As New StackPanel With {.Margin = New Thickness(20, MyCard.SwapedHeight, 18, 0), .VerticalAlignment = VerticalAlignment.Top, .RenderTransform = New TranslateTransform(0, 0)}
@@ -524,7 +524,7 @@ Public Class PageDownloadInstall
             For Each Pair As KeyValuePair(Of String, List(Of JObject)) In Dict
                 If Not Pair.Value.Any() Then Continue For
                 '增加卡片
-                Dim NewCard As New MyCard With {.Title = Pair.Key, .Margin = New Thickness(0, 0, 0, 15)}
+                Dim NewCard As New MyCard With {.Title = LocalizationCore.TranslateText(Pair.Key), .Margin = New Thickness(0, 0, 0, 15)}
                 Dim NewStack As New StackPanel With {.Margin = New Thickness(20, MyCard.SwapedHeight, 18, 0), .VerticalAlignment = VerticalAlignment.Top, .RenderTransform = New TranslateTransform(0, 0)}
                 NewCard.Children.Add(NewStack)
                 NewCard.SwapControl = NewStack

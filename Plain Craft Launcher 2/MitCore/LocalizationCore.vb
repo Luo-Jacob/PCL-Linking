@@ -5,6 +5,7 @@
 Imports System.Collections.Concurrent
 Imports System.Collections.Generic
 Imports System.IO
+Imports System.Linq
 Imports System.Reflection
 Imports System.Text
 Imports System.Text.RegularExpressions
@@ -220,6 +221,66 @@ Public Module LocalizationCore
         M = Regex.Match(Text, "^已扫描\s*(\d+)\s*个插件（已启用\s*(\d+)\s*个，已禁用\s*(\d+)\s*个）$")
         If M.Success Then Return $"Scanned {M.Groups(1).Value} plugins ({M.Groups(2).Value} enabled, {M.Groups(3).Value} disabled)"
 
+        '时间跨度格式（StringUtils.FormatTimeSpan 短格式与长格式）
+        M = Regex.Match(Text, "^(\d+)\s*年\s*(\d+)\s*个月([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}y {M.Groups(2).Value}mo ago", $"in {M.Groups(1).Value}y {M.Groups(2).Value}mo")
+        M = Regex.Match(Text, "^(\d+)\s*个月\s*(\d+)\s*天([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}mo {M.Groups(2).Value}d ago", $"in {M.Groups(1).Value}mo {M.Groups(2).Value}d")
+        M = Regex.Match(Text, "^(\d+)\s*月\s*(\d+)\s*天([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}mo {M.Groups(2).Value}d ago", $"in {M.Groups(1).Value}mo {M.Groups(2).Value}d")
+        M = Regex.Match(Text, "^(\d+)\s*天\s*(\d+)\s*小时([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}d {M.Groups(2).Value}h ago", $"in {M.Groups(1).Value}d {M.Groups(2).Value}h")
+        M = Regex.Match(Text, "^(\d+)\s*小时\s*(\d+)\s*分钟([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}h {M.Groups(2).Value}m ago", $"in {M.Groups(1).Value}h {M.Groups(2).Value}m")
+        M = Regex.Match(Text, "^(\d+)\s*分\s*(\d+)\s*秒([前后])$")
+        If M.Success Then Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value}m {M.Groups(2).Value}s ago", $"in {M.Groups(1).Value}m {M.Groups(2).Value}s")
+        M = Regex.Match(Text, "^(\d+)\s*(年|个月|月|天|小时|分钟|秒)([前后])$")
+        If M.Success Then
+            Dim Unit = M.Groups(2).Value
+            Dim EnUnit = If(Unit = "年", "yr", If(Unit = "个月" OrElse Unit = "月", "mo", If(Unit = "天", "d", If(Unit = "小时", "h", If(Unit = "分钟", "m", "s")))))
+            Return If(M.Groups(3).Value = "前", $"{M.Groups(1).Value} {EnUnit} ago", $"in {M.Groups(1).Value} {EnUnit}")
+        End If
+
+        '下载与安装版本列表描述
+        M = Regex.Match(Text, "^最新(正式版|预览版)，发布于\s*(.+)$")
+        If M.Success Then Return $"Latest {If(M.Groups(1).Value = "正式版", "Release", "Snapshot")}, Released {M.Groups(2).Value}"
+
+        M = Regex.Match(Text, "^(推荐版|最新版|测试版|正式版|稳定版)(?:，(.*))?$")
+        If M.Success Then
+            Dim Badge = TranslateText(M.Groups(1).Value)
+            Dim Rest = M.Groups(2).Value
+            If String.IsNullOrEmpty(Rest) Then Return Badge
+            Dim Parts = Rest.Split({"，"c}, StringSplitOptions.RemoveEmptyEntries).Select(Function(p) TranslateText(p.Trim()))
+            Return Badge & ", " & String.Join(", ", Parts)
+        End If
+
+        M = Regex.Match(Text, "^发布于\s*(.+)$")
+        If M.Success Then Return $"Released {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^兼容\s*Forge\s*(.+)$")
+        If M.Success Then Return $"Forge {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^全部版本\s*\((\d+)\)$")
+        If M.Success Then Return $"All Versions ({M.Groups(1).Value})"
+
+        M = Regex.Match(Text, "^种类：(.+)$")
+        If M.Success Then Return $"Type: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^原名\s*[:：]\s*(.+)$")
+        If M.Success Then Return $"Original: {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^转到\s+(.+)$")
+        If M.Success Then Return $"Open {M.Groups(1).Value}"
+
+        M = Regex.Match(Text, "^仅\s+(.+)$")
+        If M.Success Then Return $"{M.Groups(1).Value} Only"
+
+        M = Regex.Match(Text, "^(.+?)（所选版本）$")
+        If M.Success Then Return $"{M.Groups(1).Value} (Selected)"
+
+        M = Regex.Match(Text, "^当前选择为「原版」，以下\s*(\d+)\s*个\s*Mod\s*无法在原版运行（装配时将跳过\s*Mod）：(.*)$")
+        If M.Success Then Return $"Vanilla selected: {M.Groups(1).Value} mod(s) cannot run on Vanilla and will be skipped: {M.Groups(2).Value}"
+
         M = Regex.Match(Text, "^共发现\s*(\d+)\s*个世界存档（点击卡片可编辑规则与数据包）$")
         If M.Success Then Return $"Found {M.Groups(1).Value} worlds (click a card to edit rules & datapacks)"
 
@@ -258,7 +319,9 @@ Public Module LocalizationCore
         If M.Success Then Return $"About {M.Groups(1).Value}"
 
         If Text.StartsWith("正在获取", StringComparison.Ordinal) AndAlso Text.EndsWith("列表", StringComparison.Ordinal) Then
-            Return "Fetching list..."
+            Dim Mid = Text.Substring("正在获取".Length, Text.Length - "正在获取".Length - "列表".Length).Trim()
+            If Mid = "" Then Return "Fetching list..."
+            Return $"Fetching {TranslateText(Mid)} list..."
         End If
         If Text.StartsWith("正在安装 ", StringComparison.Ordinal) Then Return "Installing " & Text.Substring("正在安装 ".Length)
         If Text.StartsWith("正在下载 ", StringComparison.Ordinal) Then Return "Downloading " & Text.Substring("正在下载 ".Length)

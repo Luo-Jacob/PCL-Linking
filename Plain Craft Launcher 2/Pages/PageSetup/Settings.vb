@@ -138,7 +138,7 @@ Public Class Settings
         New Setting("PrecheckWarnMcVersion", True),
         New Setting("PrecheckWarnBreaks", False),
         New Setting("PrecheckWarnServerOnly", False),
-        New Setting("SystemCheckUpdateOnStartup", False),
+        New Setting("SystemCheckUpdateOnStartup", True),
         New Setting("ToolUpdateRelease", False, Source:=Sources.Registry),
         New Setting("ToolUpdateSnapshot", False, Source:=Sources.Registry),
         New Setting("ToolUpdateReleaseLast", "", Source:=Sources.Registry),
@@ -470,14 +470,9 @@ Public Class Settings
 
     Private Const DpapiPrefix As String = DpapiCredentialCore.DpapiPrefix
     Private Shared ReadOnly DpapiEntropy As Byte() = Encoding.UTF8.GetBytes("PCL-LML-Fork-Settings-Entropy-v1")
-    Private Shared ReadOnly desInitialVector As Byte() = Encoding.UTF8.GetBytes("95168702")
 
     Private Shared Function ProtectSensitiveValue(PlainText As String) As String
-        Try
-            Return DpapiCredentialCore.ProtectString(PlainText, DpapiEntropy)
-        Catch
-            Return DesEncrypt(If(PlainText, ""), "LML" & Identify)
-        End Try
+        Return DpapiCredentialCore.ProtectString(If(PlainText, ""), DpapiEntropy)
     End Function
 
     Private Shared Function UnprotectSensitiveValue(StoredValue As String) As String
@@ -486,44 +481,33 @@ Public Class Settings
         If DpapiCredentialCore.TryUnprotectString(StoredValue, DpapiEntropy, Decoded) Then
             Return Decoded
         End If
-        '兼容历史 DES 密文迁移
-        Return DesDecrypt(StoredValue, "LML" & Identify)
+        '仅当存在不含 DPAPI: 前缀的历史密文时回退一次兼容迁移读取
+        If String.IsNullOrEmpty(StoredValue) OrElse StoredValue.StartsWith(DpapiPrefix, StringComparison.Ordinal) Then Return ""
+        Return DesDecryptLegacy(StoredValue, "LML" & Identify)
     End Function
 
     ''' <summary>
-    ''' 使用 DES 对称加密算法加密字符串。
+    ''' 仅用于读取历史旧版配置文件中的迁移密文（不再用于新加密）。
     ''' </summary>
-    Private Shared Function DesEncrypt(sourceString As String, Optional key As String = Nothing) As String
-        key = If(key Is Nothing, "@;$ Abv2", key.GetStableHashCode().ToString().EnsureLength("X"c, 8).Substring(0, 8))
-        Dim btKey As Byte() = Encoding.UTF8.GetBytes(key)
-        Using des As New DESCryptoServiceProvider()
-            Using ms As New MemoryStream()
-                Using cs As New CryptoStream(ms, des.CreateEncryptor(btKey, desInitialVector), CryptoStreamMode.Write)
-                    Dim inData As Byte() = Encoding.UTF8.GetBytes(sourceString)
-                    cs.Write(inData, 0, inData.Length)
-                    cs.FlushFinalBlock()
-                    Return Convert.ToBase64String(ms.ToArray())
+    Private Shared Function DesDecryptLegacy(encryptedString As String, Optional key As String = Nothing) As String
+        Try
+            Dim legacyIv As Byte() = Encoding.UTF8.GetBytes("95168702")
+            Dim keyStr = If(key Is Nothing, "@;$ Abv2", key.GetStableHashCode().ToString().EnsureLength("X"c, 8).Substring(0, 8))
+            Dim btKey As Byte() = Encoding.UTF8.GetBytes(keyStr)
+            Using des As New DESCryptoServiceProvider()
+                Using ms As New MemoryStream()
+                    Using cs As New CryptoStream(ms, des.CreateDecryptor(btKey, legacyIv), CryptoStreamMode.Write)
+                        Dim inData As Byte() = Convert.FromBase64String(encryptedString)
+                        cs.Write(inData, 0, inData.Length)
+                        cs.FlushFinalBlock()
+                        Return Encoding.UTF8.GetString(ms.ToArray())
+                    End Using
                 End Using
             End Using
-        End Using
-    End Function
-
-    ''' <summary>
-    ''' 使用 DES 对称加密算法解密字符串。
-    ''' </summary>
-    Private Shared Function DesDecrypt(encryptedString As String, Optional key As String = Nothing) As String
-        key = If(key Is Nothing, "@;$ Abv2", key.GetStableHashCode().ToString().EnsureLength("X"c, 8).Substring(0, 8))
-        Dim btKey As Byte() = Encoding.UTF8.GetBytes(key)
-        Using des As New DESCryptoServiceProvider()
-            Using ms As New MemoryStream()
-                Using cs As New CryptoStream(ms, des.CreateDecryptor(btKey, desInitialVector), CryptoStreamMode.Write)
-                    Dim inData As Byte() = Convert.FromBase64String(encryptedString)
-                    cs.Write(inData, 0, inData.Length)
-                    cs.FlushFinalBlock()
-                    Return Encoding.UTF8.GetString(ms.ToArray())
-                End Using
-            End Using
-        End Using
+        Catch ex As Exception
+            Logger.Warn(ex, "读取历史凭据密文失败，已按空值处理")
+            Return ""
+        End Try
     End Function
 
 #End Region

@@ -707,7 +707,7 @@ NextPage:
                 Scores(Result) = If(Result.WikiId > 0, 0.2, 0) +
                            Math.Log10(Math.Max(Result.DownloadCount, 1) * GetDownloadCountMult(Result)) / 9
                 SearchEntries.Add(New SearchEntry(Of ResourceProject) With {.Item = Result, .SearchSource = New List(Of SearchSource) From {
-                    New SearchSource(If(IsChineseSearch, Result.TranslatedName, Result.RawName).Split("/"c, True), 1),
+                    New SearchSource(If(IsChineseSearch, Result.ChineseName, Result.RawName).Split("/"c, True), 1),
                     New SearchSource(Result.Description, 0.05)}})
             Next
             Dim SearchResult = Search(SearchEntries, RawSearchText, 10000, -1)

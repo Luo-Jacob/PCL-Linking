@@ -125,12 +125,13 @@ GroupDone:
             Filters.Insert(0, "全部")
             '转化为按钮
             For Each Version As String In Filters
+                Dim RawFilterVal = Version
                 Dim NewButton As New MyRadioButton With {
-                    .Text = Version, .Margin = New Thickness(2, 0, 2, 0), .ColorType = MyRadioButton.ColorState.Highlight}
+                    .Text = LocalizationCore.TranslateText(Version), .Tag = If(Version = "全部", "ALL", Version), .Margin = New Thickness(2, 0, 2, 0), .ColorType = MyRadioButton.ColorState.Highlight}
                 NewButton.LabText.Margin = New Thickness(-2, 0, 10, 0)
                 AddHandler NewButton.Check,
                 Sub(sender As MyRadioButton, raiseByMouse As Boolean)
-                    VersionFilter = If(sender.Text = "全部", Nothing, sender.Text)
+                    VersionFilter = If(sender.Tag?.ToString() = "ALL" OrElse sender.Text = "全部", Nothing, RawFilterVal)
                     UpdateFilterResult()
                 End Sub
                 PanFilter.Children.Add(NewButton)
@@ -206,7 +207,7 @@ GroupDone:
                 If Not Pair.Value.Any() Then Continue For
                 If Pair.Key = TargetCardName.Replace("（所选版本）", "") Then Continue For
                 '增加卡片
-                Dim NewCard As New MyCard With {.Title = Pair.Key, .Margin = New Thickness(0, 0, 0, 15)}
+                Dim NewCard As New MyCard With {.Title = LocalizationCore.TranslateText(Pair.Key), .Margin = New Thickness(0, 0, 0, 15)}
                 Dim NewStack As New StackPanel With {.Margin = New Thickness(20, MyCard.SwapedHeight, 18, 0), .VerticalAlignment = VerticalAlignment.Top, .RenderTransform = New TranslateTransform(0, 0), .Tag = Pair.Value}
                 NewCard.Children.Add(NewStack)
                 NewCard.SwapControl = NewStack
@@ -215,14 +216,14 @@ GroupDone:
                 '确定卡片是否默认展开
                 If Pair.Key = TargetCardName OrElse
                    (FrmMain.PageCurrent.Additional IsNot Nothing AndAlso '#2761
-                   CType(FrmMain.PageCurrent.Additional(1), List(Of String)).Contains(NewCard.Title)) Then
+                   (CType(FrmMain.PageCurrent.Additional(1), List(Of String)).Contains(NewCard.Title) OrElse CType(FrmMain.PageCurrent.Additional(1), List(Of String)).Contains(Pair.Key))) Then
                     NewCard.BuildContent()
                 Else
                     NewCard.IsSwapped = True
                 End If
                 '增加提示
                 If Pair.Key = "其他" Then
-                    NewStack.Children.Add(New MyHint With {.Text = "由于版本信息更新缓慢，可能无法识别刚更新的 MC 版本。几天后即可正常识别。", .Theme = MyHint.Themes.Yellow, .Margin = New Thickness(5, 0, 0, 8)})
+                    NewStack.Children.Add(New MyHint With {.Text = LocalizationCore.TranslateText("由于版本信息更新缓慢，可能无法识别刚更新的 MC 版本。几天后即可正常识别。"), .Theme = MyHint.Themes.Yellow, .Margin = New Thickness(5, 0, 0, 8)})
                 End If
             Next
             '如果只有一张卡片，展开第一张卡片
@@ -232,8 +233,8 @@ GroupDone:
             '替代提示
             If Project.Types = ResourceTypes.ModOrDataPack AndAlso (TargetResourceType = ResourceTypes.Mod OrElse TargetResourceType = ResourceTypes.DataPack) Then
                 HintAlternative.Visibility = Visibility.Visible
-                HintAlternative.Text = If(TargetResourceType = ResourceTypes.Mod,
-                    "以下是该项目的 Mod 版本。点击这里查看其数据包版本。", "以下是该项目的数据包版本。点击这里查看其 Mod 版本。")
+                HintAlternative.Text = LocalizationCore.TranslateText(If(TargetResourceType = ResourceTypes.Mod,
+                    "以下是该项目的 Mod 版本。点击这里查看其数据包版本。", "以下是该项目的数据包版本。点击这里查看其 Mod 版本。"))
             Else
                 HintAlternative.Visibility = Visibility.Collapsed
             End If
@@ -261,14 +262,14 @@ GroupDone:
         End Function).ToList
         If Dependences.Any() Then
             '添加开头间隔
-            Stack.Children.Add(New TextBlock With {.Text = "前置资源", .FontSize = 14, .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 2, 0, 5)})
+            Stack.Children.Add(New TextBlock With {.Text = LocalizationCore.TranslateText("前置资源"), .FontSize = 14, .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 2, 0, 5)})
             '添加前置列表
             For Each Dep In Dependences
                 Dim Item = ResourceProject.Cache(Dep).ToResourceItem(False, False)
                 Stack.Children.Add(Item)
             Next
             '添加结尾间隔
-            Stack.Children.Add(New TextBlock With {.Text = "版本列表", .FontSize = 14, .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 12, 0, 5)})
+            Stack.Children.Add(New TextBlock With {.Text = LocalizationCore.TranslateText("版本列表"), .FontSize = 14, .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 12, 0, 5)})
         End If
         '实例化每个元素
         Dim HasServerDir = IO.Directory.Exists(PageToolsServer.LoadSavedServerDir())
@@ -327,7 +328,7 @@ GroupDone:
         PanIntro.Children.Insert(0, ResourceItem)
 
         '决定按钮显示
-        BtnIntroWeb.Text = $"转到 {If(Project.Platform = ResourcePlatforms.SpigotMC, "SpigotMC", Project.Platform.ToString)}"
+        BtnIntroWeb.Text = LocalizationCore.TranslateText($"转到 {If(Project.Platform = ResourcePlatforms.SpigotMC, "SpigotMC", Project.Platform.ToString)}")
         BtnIntroWiki.Visibility = If(Project.WikiId = 0, Visibility.Collapsed, Visibility.Visible)
 
         AniControlEnabled -= 1

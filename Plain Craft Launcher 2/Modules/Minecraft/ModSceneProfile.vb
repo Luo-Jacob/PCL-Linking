@@ -9,10 +9,6 @@ Public Module ModSceneProfile
     Public Const BuiltInSoloVisualId As String = "builtin_solo_visual"
     Public Const BuiltInMultiFpsId As String = "builtin_multi_fps"
 
-    Private ReadOnly VisualOnlyModKeywords As String() = {
-        "iris", "oculus", "distanthorizons", "shader", "blur", "sound-physics", "soundphysics"
-    }
-
     Public Class SceneProfile
         Public Property Id As String = ""
         Public Property Name As String = ""

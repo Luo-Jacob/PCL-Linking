@@ -56,11 +56,11 @@ Public Class ResourceVersion
         Get
             Select Case ReleaseType
                 Case ReleaseTypes.Release
-                    Return "正式版"
+                    Return LocalizationCore.TranslateText("正式版")
                 Case ReleaseTypes.Beta
-                    Return If(ModeDebug, "Beta 版", "测试版")
+                    Return LocalizationCore.TranslateText(If(ModeDebug, "Beta 版", "测试版"))
                 Case Else
-                    Return If(ModeDebug, "Alpha 版", "早期测试版")
+                    Return LocalizationCore.TranslateText(If(ModeDebug, "Alpha 版", "早期测试版"))
             End Select
         End Get
     End Property
@@ -532,21 +532,27 @@ Public Class ResourceVersion
                 .Logo = $"{PathImage}ReleaseTypes/{ReleaseType}.png"
                 AddHandler .Click, ClickHandler
                 '描述
+                Dim IsEn = LocalizationCore.IsEnglishActive()
                 .Info =
                 Iterator Function()
-                    If ModLoaders <> ModLoaders.None Then Yield ModLoaders.Flags.Join("、"c)
-                    If Not String.IsNullOrEmpty(ExternalOnlyUrl) Then Yield "需在网页下载"
+                    If ModLoaders <> ModLoaders.None Then Yield ModLoaders.Flags.Join(If(IsEn, ", ", "、"))
+                    If Not String.IsNullOrEmpty(ExternalOnlyUrl) Then Yield LocalizationCore.TranslateText("需在网页下载")
                     If .Title <> PathUtils.GetFileNameWithoutExtension(FileName) Then Yield PathUtils.GetFileNameWithoutExtension(FileName)
-                    If Dependencies.Any Then Yield $"{Dependencies.Count} 项前置"
-                    If GameVersions.All(Function(v) Not v.Contains(".") OrElse {"w", "snapshot", "rc", "pre", "experimental", "-"}.Any(Function(s) v.ContainsIgnoreCase(s))) Then Yield $"游戏版本 {GameVersions.Join("、"c)}"
-                    If DownloadCount > 0 Then Yield $"下载 {If(DownloadCount > 100000, Math.Round(DownloadCount / 10000) & " 万", DownloadCount.ToString() + " ")}次" 'CurseForge 的下载次数经常错误地返回 0
-                    Yield $"更新于 {StringUtils.FormatTimeSpan(ReleaseDate - Date.Now, False)}"
+                    If Dependencies.Any Then Yield If(IsEn, $"{Dependencies.Count} dep(s)", $"{Dependencies.Count} 项前置")
+                    If GameVersions.All(Function(v) Not v.Contains(".") OrElse {"w", "snapshot", "rc", "pre", "experimental", "-"}.Any(Function(s) v.ContainsIgnoreCase(s))) Then
+                        Yield If(IsEn, $"MC {GameVersions.Join(", ")}", $"游戏版本 {GameVersions.Join("、"c)}")
+                    End If
+                    If DownloadCount > 0 Then 'CurseForge 的下载次数经常错误地返回 0
+                        Yield If(IsEn, $"{ResourceProject.FormatCompactDownloadCount(DownloadCount)} downloads", $"下载 {ResourceProject.FormatCompactDownloadCount(DownloadCount)} 次")
+                    End If
+                    Dim TimeStr = LocalizationCore.TranslateText(StringUtils.FormatTimeSpan(ReleaseDate - Date.Now, False))
+                    Yield If(IsEn, $"Updated {TimeStr}", $"更新于 {TimeStr}")
                     If ReleaseType <> ReleaseTypes.Release Then Yield ReleaseTypeDisplay
-                End Function().Join("，"c)
+                End Function().Join(If(IsEn, ", ", "，"))
 
                 '附加操作按钮（整合包另存为 / 装入服务端）
                 If SaveAsButtonHandler IsNot Nothing Then
-                    Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = ActionButtonToolTip}
+                    Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText(ActionButtonToolTip)}
                     AddHandler BtnSave.Click, SaveAsButtonHandler
                     .Buttons = {BtnSave}
                 End If

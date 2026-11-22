@@ -74,7 +74,7 @@ RetryCacheCheck:
             ServicePointManager.EnableDnsRoundRobin = True
             ServicePointManager.ReusePort = True
             If Environment.OSVersion.Version < New Version(6, 2) Then 'Windows 7 回退（#8519）
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 Or SecurityProtocolType.Tls Or SecurityProtocolType.Tls11 Or SecurityProtocolType.Tls12
+                ServicePointManager.SecurityProtocol = ServicePointManager.SecurityProtocol Or SecurityProtocolType.Tls12
             End If
             ShouldValidateSslCertificateOnLogin(Settings.Get(Of Boolean)("ToolDownloadCert"))
             '设置初始窗口
@@ -267,10 +267,12 @@ RetryCacheCheck:
         '离线登录：从保存的账号列表里移除被点击的那个名字
         Dim Names As New List(Of String)
         Names.AddRange(Settings.Get(Of String)("LoginLegacyName").ToString.Split("¨"))
-        Names.Remove(sender.Tag)
+        Names.Remove(If(sender.Tag, "").ToString())
         Settings.Set("LoginLegacyName", Names.Join("¨"c))
-        FrmLoginLegacy.ComboName.ItemsSource = Names
-        FrmLoginLegacy.ComboName.Text = If(Names.Any, Names(0), "")
+        If FrmLoginLegacy IsNot Nothing Then
+            FrmLoginLegacy.ComboName.ItemsSource = Names
+            FrmLoginLegacy.ComboName.Text = If(Names.Any, Names(0), "")
+        End If
     End Sub
 
 End Class

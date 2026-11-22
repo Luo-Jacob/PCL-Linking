@@ -763,17 +763,33 @@ Public Class PageToolsSkin3D
         Dim SkinUrl = SkinNode?("url")?.ToString()
         If String.IsNullOrEmpty(SkinUrl) Then Throw New Exception("该角色当前使用默认皮肤")
         Dim IsSlim As Boolean = (SkinNode("metadata")?("model")?.ToString() = "slim")
-        Dim ImgBytes = Client.GetByteArrayAsync(SkinUrl).GetAwaiter().GetResult()
+        Dim ImgBytes = DownloadTextureBytesChecked(Client, SkinUrl, Required:=True)
         Dim CapeBytes As Byte() = Nothing
         Dim CapeUrl = TexJson("textures")?("CAPE")?("url")?.ToString()
         If Not String.IsNullOrWhiteSpace(CapeUrl) Then
             Try
-                CapeBytes = Client.GetByteArrayAsync(CapeUrl).GetAwaiter().GetResult()
+                CapeBytes = DownloadTextureBytesChecked(Client, CapeUrl, Required:=False)
             Catch
                 CapeBytes = Nothing
             End Try
         End If
         Return (ImgBytes, IsSlim, CapeBytes)
+    End Function
+
+    Private Shared Function DownloadTextureBytesChecked(Client As Net.Http.HttpClient, RawUrl As String, Required As Boolean) As Byte()
+        Dim Parsed As Uri = Nothing
+        If Not Uri.TryCreate(If(RawUrl, "").Trim(), UriKind.Absolute, Parsed) OrElse
+           (Not Parsed.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) AndAlso
+            Not Parsed.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)) Then
+            If Required Then Throw New Exception("无效的皮肤地址协议")
+            Return Nothing
+        End If
+        Dim Data = Client.GetByteArrayAsync(Parsed).GetAwaiter().GetResult()
+        If Data IsNot Nothing AndAlso Data.Length > 4 * 1024 * 1024 Then
+            If Required Then Throw New Exception("材质文件过大（超过 4 MB 限制）")
+            Return Nothing
+        End If
+        Return Data
     End Function
 
     Private Sub BtnSnapshotView_Click() Handles BtnSnapshotView.Click

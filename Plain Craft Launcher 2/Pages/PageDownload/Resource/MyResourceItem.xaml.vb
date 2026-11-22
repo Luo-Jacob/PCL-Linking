@@ -52,7 +52,7 @@ Public Class MyResourceItem
                     .Background = New MyColor("#11000000"), .Padding = New Thickness(3, 1, 3, 1), .CornerRadius = New CornerRadius(3),
                     .Margin = New Thickness(0, 0, 3, 0), .SnapsToDevicePixels = True, .UseLayoutRounding = False}
                 Dim LabTag As New TextBlock With {
-                    .Text = TagText, .Foreground = New MyColor("#868686"), .FontSize = 11}
+                    .Text = LocalizationCore.TranslateText(TagText), .Foreground = New MyColor("#868686"), .FontSize = 11}
                 BorderTag.Child = LabTag
                 PanTags.Children.Add(BorderTag)
             Next

@@ -191,13 +191,21 @@ Public Class PageToolsResourceMerge
         Return ""
     End Function
 
+    Private Shared Function HasDotDotSegment(RelPath As String) As Boolean
+        If String.IsNullOrWhiteSpace(RelPath) Then Return True
+        For Each Seg In RelPath.Replace("\"c, "/"c).Split("/"c)
+            If Seg = ".." Then Return True
+        Next
+        Return False
+    End Function
+
     Private Shared Function EnumeratePackEntries(Pack As PackSourceItem) As List(Of (DestRel As String, SrcKey As String))
         Dim PathsList As New List(Of (DestRel As String, SrcKey As String))
         If Pack.IsDirectory Then
             Dim RootFull = Path.GetFullPath(Pack.FullPath).TrimEnd("\"c)
             For Each F In Directory.EnumerateFiles(RootFull, "*", SearchOption.AllDirectories)
                 Dim Rel = Path.GetFullPath(F).Substring(RootFull.Length).TrimStart("\"c, "/"c).Replace("\"c, "/"c)
-                If String.IsNullOrEmpty(Rel) OrElse Rel.Contains("..") Then Continue For
+                If String.IsNullOrEmpty(Rel) OrElse HasDotDotSegment(Rel) Then Continue For
                 PathsList.Add((Rel, Rel))
             Next
         Else
@@ -206,7 +214,7 @@ Public Class PageToolsResourceMerge
                 For Each Entry In Arc.Entries
                     If String.IsNullOrEmpty(Entry.Name) Then Continue For
                     Dim RawKey = Entry.FullName.Replace("\"c, "/"c).TrimStart("/"c)
-                    If String.IsNullOrEmpty(RawKey) OrElse RawKey.Contains("..") Then Continue For
+                    If String.IsNullOrEmpty(RawKey) OrElse HasDotDotSegment(RawKey) Then Continue For
                     Dim DestRel = If(Not String.IsNullOrEmpty(Wrapper) AndAlso RawKey.StartsWith(Wrapper, StringComparison.OrdinalIgnoreCase),
                                      RawKey.Substring(Wrapper.Length),
                                      RawKey)

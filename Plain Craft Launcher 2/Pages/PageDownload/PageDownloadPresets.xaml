@@ -27,6 +27,7 @@
                     </Grid>
                     <WrapPanel Margin="0,0,0,8">
                         <local:MyButton x:Name="BtnImportPreset" Text="导入清单 (分享码/JSON)" Height="28" Padding="12,0" Margin="0,0,8,4" />
+                        <local:MyButton x:Name="BtnExtractInstancePreset" Text="提取当前实例的 Mod 与材质包为清单" Height="28" Padding="12,0" Margin="0,0,8,4" />
                         <local:MyButton x:Name="BtnExportShareCode" Text="复制分享码" Height="28" Padding="12,0" Margin="0,0,8,4" />
                         <local:MyButton x:Name="BtnExportJsonFile" Text="导出 JSON 文件" Height="28" Padding="12,0" Margin="0,0,8,4" />
                     </WrapPanel>

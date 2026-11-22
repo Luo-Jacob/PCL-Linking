@@ -263,20 +263,6 @@ Public Module EasyTierSideChannelCore
         End Using
     End Function
 
-    Private Sub WriteUInt32BE(S As Stream, Value As UInteger)
-        Dim B(3) As Byte
-        B(0) = CByte((Value >> 24) And &HFFUI)
-        B(1) = CByte((Value >> 16) And &HFFUI)
-        B(2) = CByte((Value >> 8) And &HFFUI)
-        B(3) = CByte(Value And &HFFUI)
-        S.Write(B, 0, 4)
-    End Sub
-
-    Private Function ReadUInt32BE(S As Stream) As UInteger
-        Dim B = ReadExact(S, 4)
-        Return (CUInt(B(0)) << 24) Or (CUInt(B(1)) << 16) Or (CUInt(B(2)) << 8) Or CUInt(B(3))
-    End Function
-
     Private Sub WriteInt64BE(S As Stream, Value As Long)
         Dim B(7) As Byte
         For i As Integer = 7 To 0 Step -1

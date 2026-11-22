@@ -316,9 +316,9 @@ Public Class PageDownloadModify
         BtnBack.Visibility = Visibility.Collapsed
         ImgLogo.Margin = New Thickness(15, 15, 0, 0)
         TextSelectName.Margin = New Thickness(56, 16, 16, 0)
-        LabSelectName.Text = $"原名 :   {OriginalName}"
+        LabSelectName.Text = LocalizationCore.TranslateText($"原名 :   {OriginalName}")
         UpdateOriginalNameVisibility()
-        BtnStart.Text = "开始修改"
+        BtnStart.Text = LocalizationCore.TranslateText("开始修改")
         BtnStart.Logo = FrmInstanceLeft.ItemModify.Logo
         AutoSelectedFabricApi = SelectedFabric IsNot Nothing
         AutoSelectedOptiFabric = SelectedFabric IsNot Nothing AndAlso SelectedOptiFine IsNot Nothing
@@ -344,14 +344,15 @@ Public Class PageDownloadModify
         BtnOptiFabricRestore.Tag = SelectedOptiFabric
         BtnLiteLoaderRestore.Tag = SelectedLiteLoader
         ImgMinecraftOld.Source = VanillaIcon
+        Dim NoneLabel = LocalizationCore.TranslateText("无")
         LabMinecraftOld.Text = LabMinecraftVersion.Text
-        LabOptiFineOld.Text = If(SelectedOptiFine Is Nothing, "无", LabOptiFine.Text)
-        LabForgeOld.Text = If(SelectedForge Is Nothing, "无", LabForge.Text)
-        LabNeoForgeOld.Text = If(SelectedNeoForge Is Nothing, "无", LabNeoForge.Text)
-        LabFabricOld.Text = If(SelectedFabric Is Nothing, "无", LabFabric.Text)
-        LabLiteLoaderOld.Text = If(SelectedLiteLoader Is Nothing, "无", LabLiteLoader.Text)
-        LabFabricApiOld.Text = If(SelectedFabricApi Is Nothing, "无", LabFabricApi.Text)
-        LabOptiFabricOld.Text = If(SelectedOptiFabric Is Nothing, "无", LabOptiFabric.Text)
+        LabOptiFineOld.Text = If(SelectedOptiFine Is Nothing, NoneLabel, LabOptiFine.Text)
+        LabForgeOld.Text = If(SelectedForge Is Nothing, NoneLabel, LabForge.Text)
+        LabNeoForgeOld.Text = If(SelectedNeoForge Is Nothing, NoneLabel, LabNeoForge.Text)
+        LabFabricOld.Text = If(SelectedFabric Is Nothing, NoneLabel, LabFabric.Text)
+        LabLiteLoaderOld.Text = If(SelectedLiteLoader Is Nothing, NoneLabel, LabLiteLoader.Text)
+        LabFabricApiOld.Text = If(SelectedFabricApi Is Nothing, NoneLabel, LabFabricApi.Text)
+        LabOptiFabricOld.Text = If(SelectedOptiFabric Is Nothing, NoneLabel, LabOptiFabric.Text)
         RefreshComparisons()
     End Sub
 
@@ -548,7 +549,7 @@ Public Class PageDownloadModify
         CurrentPanel.Visibility = If(IsChanged, Visibility.Collapsed, Visibility.Visible)
         '还原与取消安装按钮
         RestoreButton.Visibility = If(CanRestore, Visibility.Visible, Visibility.Collapsed)
-        If ClearButton IsNot Nothing Then ClearButton.ToolTip = If(OldVersion Is Nothing, "取消安装", "移除")
+        If ClearButton IsNot Nothing Then ClearButton.ToolTip = LocalizationCore.TranslateText(If(OldVersion Is Nothing, "取消安装", "移除"))
         Dim HasClearButton = ClearButton IsNot Nothing AndAlso ClearButton.Visibility = Visibility.Visible
         RestoreButton.Margin = New Thickness(0, 5, If(CanRestore AndAlso HasClearButton, 60, 32), 0)
         ComparePanel.Margin = New Thickness(ComparePanel.Margin.Left, ComparePanel.Margin.Top,
@@ -570,9 +571,10 @@ Public Class PageDownloadModify
         NewSide.Children(0).Visibility = If(NewVersion Is Nothing, Visibility.Collapsed, Visibility.Visible)
         Dim NewLabel = CType(NewSide.Children(1), TextBlock)
         NewLabel.Margin = If(NewVersion Is Nothing, New Thickness(0), New Thickness(7, 0, 0, 0))
-        NewLabel.Text = If(NewVersion Is Nothing, "移除", NewText)
+        NewLabel.Text = LocalizationCore.TranslateText(If(NewVersion Is Nothing, "移除", NewText))
         If NewVersion Is Nothing AndAlso UnavailableReason IsNot Nothing Then
-            NewLabel.Inlines.Add(New Run($"（{If(UnavailableReason = "无", "无可用版本", UnavailableReason)}）") With {.Foreground = ColorGray4})
+            Dim Rsn = LocalizationCore.TranslateText(If(UnavailableReason = "无", "无可用版本", UnavailableReason))
+            NewLabel.Inlines.Add(New Run($" ({Rsn})") With {.Foreground = ColorGray4})
         End If
     End Sub
 

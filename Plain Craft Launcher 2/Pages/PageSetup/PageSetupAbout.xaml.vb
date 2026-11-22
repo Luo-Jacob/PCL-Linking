@@ -6,6 +6,11 @@ Public Class PageSetupAbout
         LabFooterVersion.Text = $"{VersionDisplay} · 基于 PCL 2.14.0.0 开源版二次开发"
     End Sub
 
+    Private Sub BtnCopyDevQQ_Click() Handles BtnCopyDevQQ.Click
+        ClipboardSet("3992309256", False)
+        Hint("已复制开发者 QQ：3992309256", HintType.Green)
+    End Sub
+
     Private Sub BtnCopyQQ_Click() Handles BtnCopyQQ.Click
         ClipboardSet("870143562", False)
         Hint("已复制社区 QQ 群号：870143562", HintType.Green)
@@ -39,7 +44,7 @@ Public Class PageSetupAbout
                                              Optional StatusControl As TextBlock = Nothing,
                                              Optional ButtonControl As MyButton = Nothing)
         If ButtonControl IsNot Nothing Then ButtonControl.IsEnabled = False
-        If StatusControl IsNot Nothing Then StatusControl.Text = "正在从 GitHub Releases 检查最新版本…"
+        If StatusControl IsNot Nothing Then StatusControl.Text = LocalizationCore.TranslateText("正在从 GitHub Releases 检查最新版本…")
         If Not SilentIfLatest Then Hint("正在检查 GitHub 最新版本…", HintType.Blue)
 
         RunInNewThread(
@@ -60,7 +65,7 @@ Public Class PageSetupAbout
                     If ButtonControl IsNot Nothing Then ButtonControl.IsEnabled = True
                     If Not Res.HasUpdate Then
                         If StatusControl IsNot Nothing Then
-                            StatusControl.Text = $"当前 {VersionBaseName} 已是最新正式版（GitHub 最新：{Res.LatestTag}）。"
+                            StatusControl.Text = LocalizationCore.TranslateText($"当前 {VersionBaseName} 已是最新正式版（GitHub 最新：{Res.LatestTag}）。")
                         End If
                         If Not SilentIfLatest Then
                             Hint($"当前 {VersionBaseName} 已是最新版本！", HintType.Green)
@@ -69,7 +74,7 @@ Public Class PageSetupAbout
                     End If
 
                     If StatusControl IsNot Nothing Then
-                        StatusControl.Text = $"发现新版本：{Res.LatestTag}（当前 {VersionBaseName}），点击检查可打开下载页。"
+                        StatusControl.Text = LocalizationCore.TranslateText($"发现新版本：{Res.LatestTag}（当前 {VersionBaseName}），点击检查可打开下载页。")
                     End If
 
                     Dim NotesSnippet = If(Res.ReleaseNotes, "").Trim()

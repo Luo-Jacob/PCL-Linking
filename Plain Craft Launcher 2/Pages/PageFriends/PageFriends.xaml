@@ -213,7 +213,7 @@
                         <ColumnDefinition Width="1*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <local:MyButton Grid.Column="0" x:Name="BtnSendFile" Text="📎 文件" Height="34" Padding="10,0" Margin="0,0,8,0"
+                    <local:MyButton Grid.Column="0" x:Name="BtnSendFile" Text="文件" Height="34" Padding="10,0" Margin="0,0,8,0"
                                     ToolTip="选择文件进行端到端加密发送（单文件上限 10 MB；支持直接拖入文件或 Ctrl+V 发送截图）" />
                     <local:MyTextBox Grid.Column="1" x:Name="TextChatInput" MinHeight="34" MaxHeight="90" MaxLength="2000"
                                      AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"

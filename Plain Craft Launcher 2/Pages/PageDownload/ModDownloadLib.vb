@@ -96,7 +96,7 @@ Public Module ModDownloadLib
             Else
                 NewItem.Info = Entry("lore").ToString
             End If
-            If Entry("url").ToString.Contains("pcl") Then NewItem.Info = "[PCL Linking 特供下载] " & NewItem.Info
+            If Entry("url").ToString.Contains("pcl") Then NewItem.Info = LocalizationCore.TranslateText("[PCL Linking 特供下载] ") & NewItem.Info
             AddHandler NewItem.Click, OnClick
             '建立菜单
             If IsSaveOnly Then
@@ -109,18 +109,18 @@ Public Module ModDownloadLib
         End Function) With {.Height = 42}
     End Function
     Private Sub McDownloadSaveMenuBuild(sender As Object, e As EventArgs)
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf McDownloadMenuLog
-        Dim BtnServer As New MyIconButton With {.LogoScale = 1, .Logo = Logo.IconButtonServer, .ToolTip = "下载服务端"}
+        Dim BtnServer As New MyIconButton With {.LogoScale = 1, .Logo = Logo.IconButtonServer, .ToolTip = LocalizationCore.TranslateText("下载服务端")}
         AddHandler BtnServer.Click, AddressOf McDownloadMenuSaveServer
         sender.Buttons = {BtnServer, BtnInfo}
     End Sub
     Private Sub McDownloadMenuBuild(sender As Object, e As EventArgs)
-        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = "另存为"}
+        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText("另存为")}
         AddHandler BtnSave.Click, AddressOf McDownloadMenuSave
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf McDownloadMenuLog
-        Dim BtnServer As New MyIconButton With {.LogoScale = 1, .Logo = Logo.IconButtonServer, .ToolTip = "下载服务端"}
+        Dim BtnServer As New MyIconButton With {.LogoScale = 1, .Logo = Logo.IconButtonServer, .ToolTip = LocalizationCore.TranslateText("下载服务端")}
         AddHandler BtnServer.Click, AddressOf McDownloadMenuSaveServer
         sender.Buttons = {BtnSave, BtnInfo, BtnServer}
     End Sub
@@ -394,70 +394,70 @@ pause"
             End If
             Logger.Info($"开始安装 OptiFine：{Target}")
             Dim TotalLength As Integer = 0
-            Dim process As New Process With {.StartInfo = Info}
-            Dim LastResult As String = ""
-            Using outputWaitHandle As New AutoResetEvent(False)
-                Using errorWaitHandle As New AutoResetEvent(False)
-                    AddHandler process.OutputDataReceived,
-                    Function(sender, e)
-                        Try
-                            If e.Data Is Nothing Then
-                                outputWaitHandle.[Set]()
-                            Else
-                                LastResult = e.Data
-                                Logger.Trace(LastResult)
-                                TotalLength += 1
-                                Task.Progress += 0.7 / 7000
-                            End If
-                        Catch ex As ObjectDisposedException
-                        Catch ex As Exception
-                            Logger.Warn(ex, "读取 OptiFine 安装器信息失败")
-                        End Try
-                        Try
-                            If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
-                                Logger.Info("由于任务取消，已中止 OptiFine 安装")
-                                process.Kill()
-                            End If
-                        Catch
-                        End Try
-                        Return Nothing
-                    End Function
-                    AddHandler process.ErrorDataReceived,
-                    Function(sender, e)
-                        Try
-                            If e.Data Is Nothing Then
-                                errorWaitHandle.[Set]()
-                            Else
-                                LastResult = e.Data
-                                Logger.Trace(LastResult)
-                                TotalLength += 1
-                                Task.Progress += 0.7 / 7000
-                            End If
-                        Catch ex As ObjectDisposedException
-                        Catch ex As Exception
-                            Logger.Warn(ex, "读取 OptiFine 安装器错误信息失败")
-                        End Try
-                        Try
-                            If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
-                                Logger.Info("由于任务取消，已中止 OptiFine 安装")
-                                process.Kill()
-                            End If
-                        Catch
-                        End Try
-                        Return Nothing
-                    End Function
-                    process.Start()
-                    process.BeginOutputReadLine()
-                    process.BeginErrorReadLine()
-                    '等待
-                    Do Until process.HasExited
-                        Thread.Sleep(10)
-                    Loop
-                    '输出
-                    outputWaitHandle.WaitOne(10000)
-                    errorWaitHandle.WaitOne(10000)
-                    process.Dispose()
-                    If TotalLength < 1000 OrElse LastResult.Contains("at ") Then Throw New Exception("安装器运行出错，末行为 " & LastResult)
+            Using process As New Process With {.StartInfo = Info}
+                Dim LastResult As String = ""
+                Using outputWaitHandle As New AutoResetEvent(False)
+                    Using errorWaitHandle As New AutoResetEvent(False)
+                        AddHandler process.OutputDataReceived,
+                        Function(sender, e)
+                            Try
+                                If e.Data Is Nothing Then
+                                    outputWaitHandle.[Set]()
+                                Else
+                                    LastResult = e.Data
+                                    Logger.Trace(LastResult)
+                                    TotalLength += 1
+                                    Task.Progress += 0.7 / 7000
+                                End If
+                            Catch ex As ObjectDisposedException
+                            Catch ex As Exception
+                                Logger.Warn(ex, "读取 OptiFine 安装器信息失败")
+                            End Try
+                            Try
+                                If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
+                                    Logger.Info("由于任务取消，已中止 OptiFine 安装")
+                                    process.Kill()
+                                End If
+                            Catch
+                            End Try
+                            Return Nothing
+                        End Function
+                        AddHandler process.ErrorDataReceived,
+                        Function(sender, e)
+                            Try
+                                If e.Data Is Nothing Then
+                                    errorWaitHandle.[Set]()
+                                Else
+                                    LastResult = e.Data
+                                    Logger.Trace(LastResult)
+                                    TotalLength += 1
+                                    Task.Progress += 0.7 / 7000
+                                End If
+                            Catch ex As ObjectDisposedException
+                            Catch ex As Exception
+                                Logger.Warn(ex, "读取 OptiFine 安装器错误信息失败")
+                            End Try
+                            Try
+                                If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
+                                    Logger.Info("由于任务取消，已中止 OptiFine 安装")
+                                    process.Kill()
+                                End If
+                            Catch
+                            End Try
+                            Return Nothing
+                        End Function
+                        process.Start()
+                        process.BeginOutputReadLine()
+                        process.BeginErrorReadLine()
+                        '等待
+                        Do Until process.HasExited
+                            Thread.Sleep(10)
+                        Loop
+                        '输出
+                        outputWaitHandle.WaitOne(10000)
+                        errorWaitHandle.WaitOne(10000)
+                        If TotalLength < 1000 OrElse LastResult.Contains("at ") Then Throw New Exception("安装器运行出错，末行为 " & LastResult)
+                    End Using
                 End Using
             End Using
         End SyncLock
@@ -671,9 +671,9 @@ Retry:
             '建立控件
             Dim NewItem As New MyListItem With {
                 .Title = Entry.DisplayName, .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-                .Info = If(Entry.IsPreview, "测试版", "正式版") &
+                .Info = LocalizationCore.TranslateText(If(Entry.IsPreview, "测试版", "正式版") &
                         If(Entry.ReleaseTime = "", "", "，发布于 " & Entry.ReleaseTime) &
-                        If(Entry.RequiredForgeVersion Is Nothing, "，不兼容 Forge", If(Entry.RequiredForgeVersion = "", "", "，兼容 Forge " & Entry.RequiredForgeVersion)),
+                        If(Entry.RequiredForgeVersion Is Nothing, "，不兼容 Forge", If(Entry.RequiredForgeVersion = "", "", "，兼容 Forge " & Entry.RequiredForgeVersion))),
                 .Logo = PathImage & "Blocks/GrassPath.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -687,14 +687,14 @@ Retry:
         End Function) With {.Height = 42}
     End Function
     Private Sub OptiFineSaveContMenuBuild(sender As Object, e As EventArgs)
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf OptiFineLog_Click
         sender.Buttons = {BtnInfo}
     End Sub
     Private Sub OptiFineContMenuBuild(sender As Object, e As EventArgs)
-        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = "另存为"}
+        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText("另存为")}
         AddHandler BtnSave.Click, AddressOf OptiFineSave_Click
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf OptiFineLog_Click
         sender.Buttons = {BtnSave, BtnInfo}
     End Sub
@@ -821,7 +821,7 @@ Retry:
             '建立控件
             Dim NewItem As New MyListItem With {
                 .Title = Entry.Inherit, .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-                .Info = If(Entry.IsPreview, "测试版", "稳定版") & If(Entry.ReleaseTime = "", "", "，发布于 " & Entry.ReleaseTime),
+                .Info = LocalizationCore.TranslateText(If(Entry.IsPreview, "测试版", "稳定版") & If(Entry.ReleaseTime = "", "", "，发布于 " & Entry.ReleaseTime)),
                 .Logo = PathImage & "Blocks/Egg.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -839,18 +839,18 @@ Retry:
         If sender.Tag.IsLegacy Then
             sender.Buttons = {}
         Else
-            Dim BtnList As New MyIconButton With {.Logo = Logo.IconButtonList, .ToolTip = "查看全部版本", .Tag = sender}
+            Dim BtnList As New MyIconButton With {.Logo = Logo.IconButtonList, .ToolTip = LocalizationCore.TranslateText("查看全部版本"), .Tag = sender}
             AddHandler BtnList.Click, AddressOf LiteLoaderAll_Click
             sender.Buttons = {BtnList}
         End If
     End Sub
     Private Sub LiteLoaderContMenuBuild(sender As MyListItem, e As EventArgs)
-        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = "保存安装器", .Tag = sender}
+        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText("保存安装器"), .Tag = sender}
         AddHandler BtnSave.Click, AddressOf LiteLoaderSave_Click
         If sender.Tag.IsLegacy Then
             sender.Buttons = {BtnSave}
         Else
-            Dim BtnList As New MyIconButton With {.Logo = Logo.IconButtonList, .ToolTip = "查看全部版本", .Tag = sender}
+            Dim BtnList As New MyIconButton With {.Logo = Logo.IconButtonList, .ToolTip = LocalizationCore.TranslateText("查看全部版本"), .Tag = sender}
             AddHandler BtnList.Click, AddressOf LiteLoaderAll_Click
             sender.Buttons = {BtnSave, BtnList}
         End If
@@ -952,75 +952,75 @@ Retry:
             }
             Dim LoaderName As String = If(IsNeoForge, "NeoForge", "Forge")
             Logger.Info($"开始安装 {LoaderName}：{Arguments}")
-            Dim process As New Process With {.StartInfo = Info}
-            Dim LastResults As New Queue(Of String)
-            Using outputWaitHandle As New AutoResetEvent(False)
-                Using errorWaitHandle As New AutoResetEvent(False)
-                    AddHandler process.OutputDataReceived,
-                    Function(sender, e)
-                        Try
-                            If e.Data Is Nothing Then
-                                outputWaitHandle.[Set]()
-                            Else
-                                LastResults.Enqueue(e.Data)
-                                If LastResults.Count > 100 Then LastResults.Dequeue()
-                                ForgelikeInjectorLine(e.Data, Task)
-                            End If
-                        Catch ex As ObjectDisposedException
-                        Catch ex As Exception
-                            Logger.Warn(ex, $"读取 {LoaderName} 安装器信息失败")
-                        End Try
-                        Try
-                            If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
-                                Logger.Info($"由于任务取消，已中止 {LoaderName} 安装")
-                                process.Kill()
-                            End If
-                        Catch
-                        End Try
-                        Return Nothing
-                    End Function
-                    AddHandler process.ErrorDataReceived,
-                    Function(sender, e)
-                        Try
-                            If e.Data Is Nothing Then
-                                errorWaitHandle.[Set]()
-                            Else
-                                LastResults.Enqueue(e.Data)
-                                If LastResults.Count > 100 Then LastResults.Dequeue()
-                                ForgelikeInjectorLine(e.Data, Task)
-                            End If
-                        Catch ex As ObjectDisposedException
-                        Catch ex As Exception
-                            Logger.Warn(ex, $"读取 {LoaderName} 安装器错误信息失败")
-                        End Try
-                        Try
-                            If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
-                                Logger.Info($"由于任务取消，已中止 {LoaderName} 安装")
-                                process.Kill()
-                            End If
-                        Catch
-                        End Try
-                        Return Nothing
-                    End Function
-                    process.Start()
-                    process.BeginOutputReadLine()
-                    process.BeginErrorReadLine()
-                    '等待
-                    Do Until process.HasExited
-                        Thread.Sleep(10)
-                    Loop
-                    '输出
-                    outputWaitHandle.WaitOne(10000)
-                    errorWaitHandle.WaitOne(10000)
-                    process.Dispose()
-                    '检查是否安装成功：最后 5 行中是否有 true（true 可能在倒数数行，见 #832）
-                    If LastResults.Reverse().Take(5).Any(Function(l) l = "true") Then Return
-                    Logger.Warn(LastResults.Join(vbCrLf))
-                    Dim LastLines As String = ""
-                    For i As Integer = Math.Max(0, LastResults.Count - 5) To LastResults.Count - 1 '最后 5 行
-                        LastLines &= vbCrLf & LastResults(i)
-                    Next
-                    Throw New Exception($"{LoaderName} 安装器出错，日志结束部分为：" & LastLines)
+            Using process As New Process With {.StartInfo = Info}
+                Dim LastResults As New Queue(Of String)
+                Using outputWaitHandle As New AutoResetEvent(False)
+                    Using errorWaitHandle As New AutoResetEvent(False)
+                        AddHandler process.OutputDataReceived,
+                        Function(sender, e)
+                            Try
+                                If e.Data Is Nothing Then
+                                    outputWaitHandle.[Set]()
+                                Else
+                                    LastResults.Enqueue(e.Data)
+                                    If LastResults.Count > 100 Then LastResults.Dequeue()
+                                    ForgelikeInjectorLine(e.Data, Task)
+                                End If
+                            Catch ex As ObjectDisposedException
+                            Catch ex As Exception
+                                Logger.Warn(ex, $"读取 {LoaderName} 安装器信息失败")
+                            End Try
+                            Try
+                                If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
+                                    Logger.Info($"由于任务取消，已中止 {LoaderName} 安装")
+                                    process.Kill()
+                                End If
+                            Catch
+                            End Try
+                            Return Nothing
+                        End Function
+                        AddHandler process.ErrorDataReceived,
+                        Function(sender, e)
+                            Try
+                                If e.Data Is Nothing Then
+                                    errorWaitHandle.[Set]()
+                                Else
+                                    LastResults.Enqueue(e.Data)
+                                    If LastResults.Count > 100 Then LastResults.Dequeue()
+                                    ForgelikeInjectorLine(e.Data, Task)
+                                End If
+                            Catch ex As ObjectDisposedException
+                            Catch ex As Exception
+                                Logger.Warn(ex, $"读取 {LoaderName} 安装器错误信息失败")
+                            End Try
+                            Try
+                                If Task.State = LoadState.Canceled AndAlso Not process.HasExited Then
+                                    Logger.Info($"由于任务取消，已中止 {LoaderName} 安装")
+                                    process.Kill()
+                                End If
+                            Catch
+                            End Try
+                            Return Nothing
+                        End Function
+                        process.Start()
+                        process.BeginOutputReadLine()
+                        process.BeginErrorReadLine()
+                        '等待
+                        Do Until process.HasExited
+                            Thread.Sleep(10)
+                        Loop
+                        '输出
+                        outputWaitHandle.WaitOne(10000)
+                        errorWaitHandle.WaitOne(10000)
+                        '检查是否安装成功：最后 5 行中是否有 true（true 可能在倒数数行，见 #832）
+                        If LastResults.Reverse().Take(5).Any(Function(l) l = "true") Then Return
+                        Logger.Warn(LastResults.Join(vbCrLf))
+                        Dim LastLines As String = ""
+                        For i As Integer = Math.Max(0, LastResults.Count - 5) To LastResults.Count - 1 '最后 5 行
+                            LastLines &= vbCrLf & LastResults(i)
+                        Next
+                        Throw New Exception($"{LoaderName} 安装器出错，日志结束部分为：" & LastLines)
+                    End Using
                 End Using
             End Using
         End SyncLock
@@ -1357,16 +1357,16 @@ Retry:
         '显示各个版本
         If RecommendedVersion IsNot Nothing Then
             Dim Recommended = ForgeDownloadListItem(RecommendedVersion, OnClick, IsSaveOnly).Init()
-            Recommended.Info = "推荐版" & If(Recommended.Info = "", "", "，" & Recommended.Info)
+            Recommended.Info = LocalizationCore.TranslateText("推荐版" & If(RecommendedVersion.ReleaseTime = "", "", "，发布于 " & RecommendedVersion.ReleaseTime))
             Stack.Children.Add(Recommended)
         End If
         If FreshVersion IsNot Nothing Then
             Dim Fresh = ForgeDownloadListItem(FreshVersion, OnClick, IsSaveOnly).Init()
-            Fresh.Info = "最新版" & If(Fresh.Info = "", "", "，" & Fresh.Info)
+            Fresh.Info = LocalizationCore.TranslateText("最新版" & If(FreshVersion.ReleaseTime = "", "", "，发布于 " & FreshVersion.ReleaseTime))
             Stack.Children.Add(Fresh)
         End If
         '添加间隔
-        Stack.Children.Add(New TextBlock With {.Text = "全部版本 (" & Entries.Count & ")", .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 13, 0, 4)})
+        Stack.Children.Add(New TextBlock With {.Text = LocalizationCore.TranslateText("全部版本 (" & Entries.Count & ")"), .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 13, 0, 4)})
     End Sub
     Public Function ForgeDownloadListItem(Entry As DlForgeVersionEntry, OnClick As MyListItem.ClickEventHandler, IsSaveOnly As Boolean) As MyVirtualizingElement(Of MyListItem)
         Return New MyVirtualizingElement(Of MyListItem)(
@@ -1374,8 +1374,8 @@ Retry:
             '建立控件
             Dim NewItem As New MyListItem With {
                 .Title = Entry.VersionName, .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-                .Info = {If(Entry.ReleaseTime = "", "", "发布于 " & Entry.ReleaseTime), If(ModeDebug, "种类：" & Entry.Category, "")}.
-                    Where(Function(d) d <> "").Join("，"),
+                .Info = LocalizationCore.TranslateText({If(Entry.ReleaseTime = "", "", "发布于 " & Entry.ReleaseTime), If(ModeDebug, "种类：" & Entry.Category, "")}.
+                    Where(Function(d) d <> "").Join("，")),
                 .Logo = PathImage & "Blocks/Anvil.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -1390,14 +1390,14 @@ Retry:
         End Function) With {.Height = 42}
     End Function
     Private Sub ForgeContMenuBuild(sender As MyListItem, e As EventArgs)
-        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = "另存为"}
+        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText("另存为")}
         AddHandler BtnSave.Click, AddressOf ForgeSave_Click
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf ForgeLog_Click
         sender.Buttons = {BtnSave, BtnInfo}
     End Sub
     Private Sub ForgeSaveContMenuBuild(sender As MyListItem, e As EventArgs)
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf ForgeLog_Click
         sender.Buttons = {BtnInfo}
     End Sub
@@ -1507,16 +1507,16 @@ Retry:
         '显示各个版本
         If FreshStableVersion IsNot Nothing Then
             Dim Fresh = NeoForgeDownloadListItem(FreshStableVersion, OnClick, IsSaveOnly).Init()
-            Fresh.Info = If(Fresh.Info = "", "最新稳定版", "最新" & Fresh.Info)
+            Fresh.Info = LocalizationCore.TranslateText("最新稳定版")
             Stack.Children.Add(Fresh)
         End If
         If FreshBetaVersion IsNot Nothing Then
             Dim Fresh = NeoForgeDownloadListItem(FreshBetaVersion, OnClick, IsSaveOnly).Init()
-            Fresh.Info = If(Fresh.Info = "", "最新测试版", "最新" & Fresh.Info)
+            Fresh.Info = LocalizationCore.TranslateText("最新测试版")
             Stack.Children.Add(Fresh)
         End If
         '添加间隔
-        Stack.Children.Add(New TextBlock With {.Text = "全部版本 (" & Entries.Count & ")", .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 13, 0, 4)})
+        Stack.Children.Add(New TextBlock With {.Text = LocalizationCore.TranslateText("全部版本 (" & Entries.Count & ")"), .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(6, 13, 0, 4)})
     End Sub
     Public Function NeoForgeDownloadListItem(Info As DlNeoForgeListEntry, OnClick As MyListItem.ClickEventHandler, IsSaveOnly As Boolean) As MyVirtualizingElement(Of MyListItem)
         Return New MyVirtualizingElement(Of MyListItem)(
@@ -1524,7 +1524,7 @@ Retry:
             '建立控件
             Dim NewItem As New MyListItem With {
                 .Title = Info.VersionName, .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Info,
-                .Info = If(Info.IsBeta, "测试版", "稳定版"),
+                .Info = LocalizationCore.TranslateText(If(Info.IsBeta, "测试版", "稳定版")),
                 .Logo = PathImage & "Blocks/NeoForge.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -1539,14 +1539,14 @@ Retry:
         ) With {.Height = 42}
     End Function
     Private Sub NeoForgeContMenuBuild(sender As MyListItem, e As EventArgs)
-        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = "另存为"}
+        Dim BtnSave As New MyIconButton With {.Logo = Logo.IconButtonSave, .ToolTip = LocalizationCore.TranslateText("另存为")}
         AddHandler BtnSave.Click, AddressOf NeoForgeSave_Click
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf NeoForgeLog_Click
         sender.Buttons = {BtnSave, BtnInfo}
     End Sub
     Private Sub NeoForgeSaveContMenuBuild(sender As MyListItem, e As EventArgs)
-        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = "更新日志"}
+        Dim BtnInfo As New MyIconButton With {.LogoScale = 1.05, .Logo = Logo.IconButtonInfo, .ToolTip = LocalizationCore.TranslateText("更新日志")}
         AddHandler BtnInfo.Click, AddressOf NeoForgeLog_Click
         sender.Buttons = {BtnInfo}
     End Sub
@@ -1611,7 +1611,7 @@ Retry:
         Function()
             Dim NewItem As New MyListItem With {
                 .Title = Entry("version").ToString.Replace("+build", ""), .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-                .Info = If(Entry("stable").ToObject(Of Boolean), "稳定版", "测试版"),
+                .Info = LocalizationCore.TranslateText(If(Entry("stable").ToObject(Of Boolean), "稳定版", "测试版")),
                 .Logo = PathImage & "Blocks/Fabric.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -1623,7 +1623,7 @@ Retry:
         Function()
             Dim NewItem As New MyListItem With {
                 .Title = Entry.Display.Split("]")(1).Replace("Fabric API ", "").Replace(" build ", ".").BeforeFirst("+").Trim, .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-                .Info = Entry.ReleaseTypeDisplay & "，发布于 " & Entry.ReleaseDate.ToString("yyyy'/'MM'/'dd HH':'mm"),
+                .Info = LocalizationCore.TranslateText(Entry.ReleaseTypeDisplay & "，发布于 " & Entry.ReleaseDate.ToString("yyyy'/'MM'/'dd HH':'mm")),
                 .Logo = PathImage & "Blocks/Fabric.png"
             }
             AddHandler NewItem.Click, OnClick
@@ -1635,7 +1635,7 @@ Retry:
         Function()
             Dim NewItem As New MyListItem With {
                .Title = Entry.Display.Lower.Replace("optifabric-", "").Replace(".jar", "").Trim.TrimStart("v"), .SnapsToDevicePixels = True, .Height = 42, .Type = MyListItem.CheckType.Clickable, .Tag = Entry,
-               .Info = Entry.ReleaseTypeDisplay & "，发布于 " & Entry.ReleaseDate.ToString("yyyy'/'MM'/'dd HH':'mm"),
+               .Info = LocalizationCore.TranslateText(Entry.ReleaseTypeDisplay & "，发布于 " & Entry.ReleaseDate.ToString("yyyy'/'MM'/'dd HH':'mm")),
                .Logo = PathImage & "Blocks/OptiFabric.png"
             }
             AddHandler NewItem.Click, OnClick

@@ -1421,6 +1421,16 @@ Public Class PageLinkMain
             Throw New Exception($"启动 {LinkCoreName} 失败：{ex.Message}。{vbCrLf}若提示「系统找不到指定的文件」，通常是 Windows Defender 或其他杀毒软件删掉了联机模块：请把启动器所在目录与 {PathEasyTier} 加入白名单后重试。", ex)
         End Try
         SyncLock ProcessCoreLock
+            If ProcessCore IsNot Nothing Then
+                Try
+                    If Not ProcessCore.HasExited Then ProcessCore.Kill()
+                Catch
+                End Try
+                Try
+                    ProcessCore.Dispose()
+                Catch
+                End Try
+            End If
             ProcessCore = NewProcess
         End SyncLock
         NewProcess.BeginOutputReadLine()

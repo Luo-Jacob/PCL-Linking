@@ -176,6 +176,7 @@ Public Class PageToolsToolbox
                               Fs As New FileStream(TmpPath, FileMode.Create, FileAccess.Write, FileShare.None)
                             Dim Buf(32767) As Byte
                             Dim Received As Long = 0
+                            Dim ProgressSw = Stopwatch.StartNew()
                             Dim LastUiTick As Long = 0
                             Do
                                 LocalToken.ThrowIfCancellationRequested()
@@ -183,7 +184,7 @@ Public Class PageToolsToolbox
                                 If n <= 0 Then Exit Do
                                 Fs.Write(Buf, 0, n)
                                 Received += n
-                                Dim NowMs = Environment.TickCount
+                                Dim NowMs = ProgressSw.ElapsedMilliseconds
                                 If NowMs - LastUiTick >= 150 Then
                                     LastUiTick = NowMs
                                     Dim CapturedRecv = Received

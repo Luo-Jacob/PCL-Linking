@@ -8,7 +8,7 @@
         <StackPanel x:Name="PanMain" Margin="25,10">
             <local:MyCard Margin="0,15" Title="基础" x:Name="CardLauncher">
                 <Grid Margin="25,40,25,17">
-                    <StackPanel>
+                    <StackPanel Grid.IsSharedSizeScope="True">
                         <Grid Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="Name1" />
@@ -45,25 +45,25 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid Grid.Row="0" Height="28" Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Name1" />
                                     <ColumnDefinition Width="1*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="颜色模式" Margin="0,0,20,0" />
-                                <local:MyComboBox local:SettingService.Key="UiColorMode" Grid.Column="1" MinWidth="160" MaxWidth="250" HorizontalAlignment="Left">
+                                <local:MyComboBox local:SettingService.Key="UiColorMode" Grid.Column="1" Height="28">
                                     <local:MyComboBoxItem local:SettingService.Value="0" Content="浅色" IsSelected="True" />
                                     <local:MyComboBoxItem local:SettingService.Value="1" Content="深色" ToolTip="PCL Linking 的深色主题：卡片、输入框、弹窗与顶栏统一换成低饱和深色，文字同步反转。&#xa;个别页面（如日志高亮）可能仍有浅色残留，会持续完善。" />
                                     <local:MyComboBoxItem local:SettingService.Value="2" Content="跟随系统" ToolTip="跟随 Windows 的深色模式设置（设置 → 个性化 → 颜色）。&#xa;切换系统颜色后，重新进入设置页或重启 PCL Linking 生效。" />
                                 </local:MyComboBox>
                             </Grid>
-                            <Grid Grid.Row="1" Margin="0,0,0,10">
+                            <Grid Grid.Row="1" Height="28" Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Name1" />
                                     <ColumnDefinition Width="1*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="界面语言 / Language" Margin="0,0,20,0" />
-                                <local:MyComboBox x:Name="ComboUiLanguage" local:SettingService.Key="UiLanguage" Grid.Column="1" MinWidth="160" MaxWidth="250" HorizontalAlignment="Left">
+                                <local:MyComboBox x:Name="ComboUiLanguage" local:SettingService.Key="UiLanguage" Grid.Column="1" Height="28">
                                     <local:MyComboBoxItem local:SettingService.Value="0" Content="简体中文" IsSelected="True" />
                                     <local:MyComboBoxItem local:SettingService.Value="1" Content="English" />
                                 </local:MyComboBox>
@@ -270,7 +270,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock x:Name="LabFooterVersion" HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.2 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.3 · 基于 PCL 2.14.0.0 开源版二次开发" />
         </StackPanel>
     </local:MyScrollViewer>
 </local:MyPageRight>

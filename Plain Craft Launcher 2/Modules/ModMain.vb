@@ -1125,8 +1125,9 @@ EndHint:
                     Target = McInstanceList.Values.SelectMany(Function(l) l).
                         FirstOrDefault(Function(x) x.Name.Equals(Req.InstanceName, StringComparison.OrdinalIgnoreCase))
                     If Target Is Nothing AndAlso Not String.IsNullOrWhiteSpace(McFolderSelected) Then
-                        Dim DirectPath = Path.Combine(McFolderSelected, "versions", Req.InstanceName) & "\"
-                        If Directory.Exists(DirectPath) Then
+                        Dim VersionsRoot = Path.Combine(McFolderSelected, "versions")
+                        Dim DirectPath = Path.Combine(VersionsRoot, Req.InstanceName) & "\"
+                        If PathUtils.IsParentOf(VersionsRoot, DirectPath) AndAlso Directory.Exists(DirectPath) Then
                             Target = New McInstance(DirectPath)
                         End If
                     End If

@@ -2117,7 +2117,7 @@ IgnoreCustomSkin:
                         .UseShellExecute = False,
                         .CreateNoWindow = True
                     })
-                    If WaitForExit Then
+                    If WaitForExit AndAlso CustomProcess IsNot Nothing Then
                         Do Until CustomProcess.HasExited OrElse Loader.IsCanceled
                             Thread.Sleep(10)
                         Loop

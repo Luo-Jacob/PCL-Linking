@@ -12,6 +12,7 @@ Public Class WinInGameOverlay
     Private PerfRefreshTimer As DispatcherTimer = Nothing
     Private IsPinnedByUser As Boolean = False
     Private _HasPositionedOnce As Boolean = False
+    Private _IsMessagesSubscribed As Boolean = False
 
     Public Sub New()
         InitializeComponent()
@@ -20,6 +21,16 @@ Public Class WinInGameOverlay
         PerfRefreshTimer = New DispatcherTimer With {.Interval = TimeSpan.FromSeconds(2)}
         AddHandler PerfRefreshTimer.Tick, AddressOf OnPerfRefreshTick
         AddHandler ModFriends.MessagesChanged, AddressOf OnFriendMessagesUpdated
+        _IsMessagesSubscribed = True
+    End Sub
+
+    Private Sub CleanupResources()
+        AutoHideTimer?.Stop()
+        PerfRefreshTimer?.Stop()
+        If _IsMessagesSubscribed Then
+            RemoveHandler ModFriends.MessagesChanged, AddressOf OnFriendMessagesUpdated
+            _IsMessagesSubscribed = False
+        End If
     End Sub
 
     Private Sub OnPerfRefreshTick(sender As Object, e As EventArgs)
@@ -46,9 +57,7 @@ Public Class WinInGameOverlay
     End Sub
 
     Private Sub WinInGameOverlay_Closed(sender As Object, e As EventArgs) Handles Me.Closed
-        AutoHideTimer?.Stop()
-        PerfRefreshTimer?.Stop()
-        RemoveHandler ModFriends.MessagesChanged, AddressOf OnFriendMessagesUpdated
+        CleanupResources()
         If Object.ReferenceEquals(_Instance, Me) Then _Instance = Nothing
     End Sub
 
@@ -115,6 +124,7 @@ Public Class WinInGameOverlay
         Sub()
             Try
                 If _Instance IsNot Nothing Then
+                    _Instance.CleanupResources()
                     _Instance.Close()
                     _Instance = Nothing
                 End If
@@ -127,6 +137,7 @@ Public Class WinInGameOverlay
         If _Instance Is Nothing OrElse Not _Instance.IsLoaded Then
             If _Instance IsNot Nothing Then
                 Try
+                    _Instance.CleanupResources()
                     _Instance.Close()
                 Catch
                 End Try

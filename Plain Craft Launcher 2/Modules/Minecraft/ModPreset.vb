@@ -1,6 +1,7 @@
 Imports System.Collections.Concurrent
 Imports System.IO
 Imports System.IO.Compression
+Imports System.Net.Http
 Imports System.Text
 
 ''' <summary>
@@ -321,6 +322,204 @@ Public Module ModPreset
             If NormV = NormTarget Then Return True
         Next
         Return False
+    End Function
+
+    ''' <summary>
+    ''' 从指定 Minecraft 实例的 mods 与 resourcepacks 目录提取已托管在 Modrinth / CurseForge 的资源为常用清单。
+    ''' </summary>
+    Public Function ExtractPresetFromInstance(Instance As McInstance) As (Pack As ModPresetPack, MatchedMods As Integer, MatchedResourcePacks As Integer, UnmatchedCount As Integer, ErrorMsg As String)
+        If Instance Is Nothing Then
+            Return (Nothing, 0, 0, 0, "当前没有选中的 Minecraft 实例！")
+        End If
+
+        Dim IndieDir = Instance.PathIndie
+        Dim Candidates As New List(Of (LocalRes As LocalResourceFile, ResType As ResourceTypes))
+
+        Dim ModsDir = Path.Combine(IndieDir, "mods")
+        If Directory.Exists(ModsDir) Then
+            For Each FPath In Directory.GetFiles(ModsDir)
+                Dim Ext = Path.GetExtension(FPath).ToLowerInvariant()
+                If Ext = ".jar" OrElse Ext = ".litemod" Then
+                    Candidates.Add((New LocalResourceFile(FPath), ResourceTypes.Mod))
+                End If
+            Next
+        End If
+
+        Dim RpDir = Path.Combine(IndieDir, "resourcepacks")
+        If Directory.Exists(RpDir) Then
+            For Each FPath In Directory.GetFiles(RpDir)
+                If Path.GetExtension(FPath).ToLowerInvariant() = ".zip" Then
+                    Candidates.Add((New LocalResourceFile(FPath), ResourceTypes.ResourcePack))
+                End If
+            Next
+        End If
+
+        If Not Candidates.Any() Then
+            Return (Nothing, 0, 0, 0, $"实例「{Instance.Name}」的 mods 与 resourcepacks 目录中未找到可用的 .jar / .litemod / .zip 资源！")
+        End If
+
+        Dim ResolvedByCandidate As New Dictionary(Of Integer, PresetResourceItem)()
+
+        '1. 批量通过 Modrinth SHA-1 匹配
+        Try
+            Dim Sha1Map As New Dictionary(Of String, List(Of Integer))(StringComparer.OrdinalIgnoreCase)
+            For i As Integer = 0 To Candidates.Count - 1
+                Dim H = Candidates(i).LocalRes.ModrinthHash
+                If String.IsNullOrWhiteSpace(H) Then Continue For
+                If Not Sha1Map.ContainsKey(H) Then Sha1Map(H) = New List(Of Integer)()
+                Sha1Map(H).Add(i)
+            Next
+
+            Dim AllSha1s = Sha1Map.Keys.ToList()
+            Dim ProjIdToCandIndices As New Dictionary(Of String, List(Of Integer))(StringComparer.OrdinalIgnoreCase)
+            Dim LoaderHintsByProj As New Dictionary(Of String, ModLoaders)(StringComparer.OrdinalIgnoreCase)
+
+            For Offset As Integer = 0 To AllSha1s.Count - 1 Step 80
+                Dim Batch = AllSha1s.Skip(Offset).Take(80).ToList()
+                Dim VerResp = TryCast(DlModRequest("https://api.modrinth.com/v2/version_files", HttpMethod.Post,
+                    $"{{""hashes"": [""{String.Join(""",""", Batch)}""], ""algorithm"": ""sha1""}}", "application/json"), JObject)
+                If VerResp Is Nothing Then Continue For
+                For Each Kvp In VerResp
+                    Dim VerJson = TryCast(Kvp.Value, JObject)
+                    Dim Pid = VerJson?("project_id")?.ToString()
+                    If String.IsNullOrWhiteSpace(Pid) OrElse Not Sha1Map.ContainsKey(Kvp.Key) Then Continue For
+                    Dim FileLoaders = ModLoaders.None
+                    Dim LoadersArr = TryCast(VerJson("loaders"), JArray)
+                    If LoadersArr IsNot Nothing Then
+                        For Each LTok In LoadersArr
+                            Select Case LTok.ToString().ToLowerInvariant()
+                                Case "forge" : FileLoaders = FileLoaders Or ModLoaders.Forge
+                                Case "fabric" : FileLoaders = FileLoaders Or ModLoaders.Fabric
+                                Case "neoforge" : FileLoaders = FileLoaders Or ModLoaders.NeoForge
+                                Case "liteloader" : FileLoaders = FileLoaders Or ModLoaders.LiteLoader
+                            End Select
+                        Next
+                    End If
+                    If FileLoaders <> ModLoaders.None Then
+                        LoaderHintsByProj(Pid) = If(LoaderHintsByProj.ContainsKey(Pid), LoaderHintsByProj(Pid) Or FileLoaders, FileLoaders)
+                    End If
+                    If Not ProjIdToCandIndices.ContainsKey(Pid) Then ProjIdToCandIndices(Pid) = New List(Of Integer)()
+                    ProjIdToCandIndices(Pid).AddRange(Sha1Map(Kvp.Key))
+                Next
+            Next
+
+            Dim ModrinthPids = ProjIdToCandIndices.Keys.ToList()
+            For Offset As Integer = 0 To ModrinthPids.Count - 1 Step 80
+                Dim PidBatch = ModrinthPids.Skip(Offset).Take(80).ToList()
+                Dim ProjArr = TryCast(DlModRequest($"https://api.modrinth.com/v2/projects?ids=[""{String.Join(""",""", PidBatch)}""]"), JArray)
+                If ProjArr Is Nothing Then Continue For
+                For Each PJson As JObject In ProjArr
+                    Dim Proj As New ResourceProject(PJson)
+                    If Not ProjIdToCandIndices.ContainsKey(Proj.Id) Then Continue For
+                    Dim HintedLoader = If(LoaderHintsByProj.ContainsKey(Proj.Id), LoaderHintsByProj(Proj.Id), ModLoaders.None)
+                    For Each Idx In ProjIdToCandIndices(Proj.Id)
+                        If ResolvedByCandidate.ContainsKey(Idx) Then Continue For
+                        Dim ExpectedType = Candidates(Idx).ResType
+                        Dim Supported = If(ExpectedType = ResourceTypes.Mod, If(Proj.ModLoaders <> ModLoaders.None, Proj.ModLoaders, HintedLoader), ModLoaders.None)
+                        ResolvedByCandidate(Idx) = New PresetResourceItem With {
+                            .ProjectId = Proj.Id,
+                            .Platform = CInt(ResourcePlatforms.Modrinth),
+                            .Slug = If(Proj.Slug, ""),
+                            .Title = If(Proj.TranslatedName, Proj.RawName),
+                            .ResourceType = CInt(ExpectedType),
+                            .SupportedLoaders = CInt(Supported),
+                            .LogoUrl = If(Proj.LogoUrl, ""),
+                            .Website = If(Proj.Website, "")
+                        }
+                    Next
+                Next
+            Next
+        Catch ex As Exception
+            Logger.Warn(ex, "从 Modrinth 提取当前实例资源失败")
+        End Try
+
+        '2. 剩余未匹配文件通过 CurseForge Murmur2 批量匹配
+        Try
+            Dim CfMap As New Dictionary(Of UInteger, List(Of Integer))()
+            For i As Integer = 0 To Candidates.Count - 1
+                If ResolvedByCandidate.ContainsKey(i) Then Continue For
+                Dim Fp = Candidates(i).LocalRes.CurseForgeHash
+                If Not CfMap.ContainsKey(Fp) Then CfMap(Fp) = New List(Of Integer)()
+                CfMap(Fp).Add(i)
+            Next
+
+            Dim AllFps = CfMap.Keys.ToList()
+            Dim CfProjToCandIndices As New Dictionary(Of Integer, List(Of Integer))()
+            Dim CfLoaderHints As New Dictionary(Of Integer, ModLoaders)()
+
+            For Offset As Integer = 0 To AllFps.Count - 1 Step 80
+                Dim Batch = AllFps.Skip(Offset).Take(80).ToList()
+                Dim Matches = TryCast(DlModRequest("https://api.curseforge.com/v1/fingerprints/432", HttpMethod.Post,
+                    $"{{""fingerprints"": [{String.Join(",", Batch)}]}}", "application/json")?("data")?("exactMatches"), JContainer)
+                If Matches Is Nothing Then Continue For
+                For Each MObj In Matches
+                    Dim Pid = MObj("id").ToObject(Of Integer)()
+                    Dim FileObj = TryCast(MObj("file"), JObject)
+                    If FileObj Is Nothing Then Continue For
+                    Dim Fp = FileObj("fileFingerprint").ToObject(Of UInteger)()
+                    If Not CfMap.ContainsKey(Fp) Then Continue For
+                    Dim VerInfo = ResourceVersion.FromPlatformJson(FileObj, ResourceTypes.Mod)
+                    If VerInfo.ModLoaders <> ModLoaders.None Then
+                        CfLoaderHints(Pid) = If(CfLoaderHints.ContainsKey(Pid), CfLoaderHints(Pid) Or VerInfo.ModLoaders, VerInfo.ModLoaders)
+                    End If
+                    If Not CfProjToCandIndices.ContainsKey(Pid) Then CfProjToCandIndices(Pid) = New List(Of Integer)()
+                    CfProjToCandIndices(Pid).AddRange(CfMap(Fp))
+                Next
+            Next
+
+            Dim CfPids = CfProjToCandIndices.Keys.ToList()
+            For Offset As Integer = 0 To CfPids.Count - 1 Step 80
+                Dim PidBatch = CfPids.Skip(Offset).Take(80).ToList()
+                Dim ModsArr = TryCast(DlModRequest("https://api.curseforge.com/v1/mods", HttpMethod.Post,
+                    $"{{""modIds"": [{String.Join(",", PidBatch)}]}}", "application/json")?("data"), JContainer)
+                If ModsArr Is Nothing Then Continue For
+                For Each ModJson As JObject In ModsArr
+                    Dim Proj As New ResourceProject(ModJson, ResourcePlatforms.CurseForge)
+                    Dim NumId = Val(Proj.Id)
+                    Dim IntId As Integer = CInt(NumId)
+                    If Not CfProjToCandIndices.ContainsKey(IntId) Then Continue For
+                    Dim HintedLoader = If(CfLoaderHints.ContainsKey(IntId), CfLoaderHints(IntId), ModLoaders.None)
+                    For Each Idx In CfProjToCandIndices(IntId)
+                        If ResolvedByCandidate.ContainsKey(Idx) Then Continue For
+                        Dim ExpectedType = Candidates(Idx).ResType
+                        Dim Supported = If(ExpectedType = ResourceTypes.Mod, If(Proj.ModLoaders <> ModLoaders.None, Proj.ModLoaders, HintedLoader), ModLoaders.None)
+                        ResolvedByCandidate(Idx) = New PresetResourceItem With {
+                            .ProjectId = Proj.Id,
+                            .Platform = CInt(ResourcePlatforms.CurseForge),
+                            .Slug = If(Proj.Slug, ""),
+                            .Title = If(Proj.TranslatedName, Proj.RawName),
+                            .ResourceType = CInt(ExpectedType),
+                            .SupportedLoaders = CInt(Supported),
+                            .LogoUrl = If(Proj.LogoUrl, ""),
+                            .Website = If(Proj.Website, "")
+                        }
+                    Next
+                Next
+            Next
+        Catch ex As Exception
+            Logger.Warn(ex, "从 CurseForge 提取当前实例资源失败")
+        End Try
+
+        Dim Pack As New ModPresetPack With {.Name = $"{Instance.Name} 清单"}
+        Dim SeenKeys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim ModCount As Integer = 0
+        Dim RpCount As Integer = 0
+
+        For i As Integer = 0 To Candidates.Count - 1
+            If Not ResolvedByCandidate.ContainsKey(i) Then Continue For
+            Dim Item = ResolvedByCandidate(i)
+            Dim DedupKey = $"{Item.Platform}|{Item.ResourceType}|{Item.ProjectId}"
+            If Not SeenKeys.Add(DedupKey) Then Continue For
+            Pack.Items.Add(Item)
+            If Item.ResourceType = CInt(ResourceTypes.ResourcePack) Then
+                RpCount += 1
+            Else
+                ModCount += 1
+            End If
+        Next
+
+        Dim Unmatched = Candidates.Count - ResolvedByCandidate.Count
+        Return (Pack, ModCount, RpCount, Unmatched, Nothing)
     End Function
 
 End Module

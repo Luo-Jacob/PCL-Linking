@@ -42,6 +42,7 @@ Public Module LocalizationService
             EventManager.RegisterClassHandler(GetType(Window), FrameworkElement.LoadedEvent, New RoutedEventHandler(AddressOf OnContainerElementLoaded))
             EventManager.RegisterClassHandler(GetType(MyCard), FrameworkElement.LoadedEvent, New RoutedEventHandler(AddressOf OnLeafControlLoaded))
             EventManager.RegisterClassHandler(GetType(MyListItem), FrameworkElement.LoadedEvent, New RoutedEventHandler(AddressOf OnLeafControlLoaded))
+            EventManager.RegisterClassHandler(GetType(MyResourceItem), FrameworkElement.LoadedEvent, New RoutedEventHandler(AddressOf OnLeafControlLoaded))
         Catch ex As Exception
             Logger.Warn(ex, "注册界面多语言事件钩子失败")
         End Try
@@ -67,13 +68,9 @@ Public Module LocalizationService
         If Dep IsNot Nothing Then TranslateElement(Dep)
     End Sub
 
-    Private Function HasTrackedChildren(Root As DependencyObject) As Boolean
+    Public Function HasTrackedChildren(Root As DependencyObject) As Boolean
         Dim Dummy As Dictionary(Of String, TrackedPropState) = Nothing
         Return TrackedMap.TryGetValue(Root, Dummy)
-    End Function
-
-    Public Function Translate(ChineseText As String) As String
-        Return LocalizationCore.TranslateText(ChineseText)
     End Function
 
     Public Sub ApplyLauncherLanguage()
@@ -142,6 +139,10 @@ Public Module LocalizationService
                 If FrmLinkMain IsNot Nothing AndAlso FrmLinkMain.IsLoaded Then FrmLinkMain.RefreshLanguageUi()
             Catch
             End Try
+            Try
+                If FrmDownloadInstall IsNot Nothing AndAlso FrmDownloadInstall.IsLoaded Then FrmDownloadInstall.ReloadSelected()
+            Catch
+            End Try
 
             '刷新设置搜索框结果
             Try
@@ -191,6 +192,38 @@ Public Module LocalizationService
                     Dim DepBtn = TryCast(BtnObj, DependencyObject)
                     If DepBtn IsNot Nothing Then TranslateRecursive(DepBtn, Visited)
                 Next
+            End If
+            IsLeafComposite = True
+        ElseIf TypeOf Node Is MyResourceItem Then
+            Dim ResItem = DirectCast(Node, MyResourceItem)
+            Dim Proj = TryCast(ResItem.Tag, ResourceProject)
+            If Proj IsNot Nothing Then
+                Dim Titles = Proj.GetControlTitle(True)
+                ResItem.Title = Titles.Title
+                If ResItem.LabTitleRaw IsNot Nothing AndAlso Titles.SubTitle <> "" Then
+                    ResItem.LabTitleRaw.Text = Titles.SubTitle
+                End If
+                ResItem.Tags = Proj.Tags.Select(Function(t) LocalizationCore.TranslateText(t)).ToList()
+                If ResItem.LabTime IsNot Nothing Then
+                    ResItem.LabTime.Text = LocalizationCore.TranslateText(StringUtils.FormatTimeSpan(Proj.LastUpdate - Date.Now, True))
+                End If
+                If ResItem.LabDownload IsNot Nothing Then
+                    ResItem.LabDownload.Text = ResourceProject.FormatCompactDownloadCount(Proj.DownloadCount)
+                End If
+                If ResItem.LabVersion IsNot Nothing AndAlso Not String.IsNullOrEmpty(ResItem.LabVersion.Text) Then
+                    ApplyTrackedProp(ResItem.LabVersion, "Text", ResItem.LabVersion.Text, Sub(v) ResItem.LabVersion.Text = v)
+                End If
+            Else
+                ApplyTrackedProp(ResItem, "Title", ResItem.Title, Sub(v) ResItem.Title = v)
+                If ResItem.LabTitleRaw IsNot Nothing Then
+                    ApplyTrackedProp(ResItem.LabTitleRaw, "Text", ResItem.LabTitleRaw.Text, Sub(v) ResItem.LabTitleRaw.Text = v)
+                End If
+                If ResItem.LabVersion IsNot Nothing Then
+                    ApplyTrackedProp(ResItem.LabVersion, "Text", ResItem.LabVersion.Text, Sub(v) ResItem.LabVersion.Text = v)
+                End If
+                If ResItem.LabTime IsNot Nothing Then
+                    ApplyTrackedProp(ResItem.LabTime, "Text", ResItem.LabTime.Text, Sub(v) ResItem.LabTime.Text = v)
+                End If
             End If
             IsLeafComposite = True
         ElseIf TypeOf Node Is MyButton Then

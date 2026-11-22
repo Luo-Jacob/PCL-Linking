@@ -107,10 +107,19 @@ Public Class ResourceProject
         End Get
     End Property
     ''' <summary>
-    ''' 翻译后的中文名。若数据库没有则等同于 RawName。
+    ''' 数据库中的中文译名。若数据库没有则等同于 RawName。
+    ''' </summary>
+    Public ReadOnly Property ChineseName As String
+        Get
+            Return If(WikiEntry?.ChineseName, RawName)
+        End Get
+    End Property
+    ''' <summary>
+    ''' 当前语言下展示的资源名称（英文模式下返回 RawName，中文模式下返回数据库译名）。
     ''' </summary>
     Public ReadOnly Property TranslatedName As String
         Get
+            If LocalizationCore.IsEnglishActive() Then Return RawName
             Return If(WikiEntry?.ChineseName, RawName)
         End Get
     End Property
@@ -631,7 +640,7 @@ Public Class ResourceProject
         '获取版本描述
         Dim GameVersionDescription As String
         If Drops Is Nothing OrElse Not Drops.Any() Then
-            GameVersionDescription = "仅快照版本" '#5412
+            GameVersionDescription = LocalizationCore.TranslateText("仅快照版本") '#5412
         Else
             Dim Segments As New List(Of String)
             Dim IsOld As Boolean = False
@@ -658,7 +667,7 @@ Public Class ResourceProject
                 ElseIf AllDrops IsNot Nothing AndAlso StartDrop >= AllDrops.First Then
                     If EndDrop < 120 Then
                         Segments.Clear()
-                        Segments.Add("全版本")
+                        Segments.Add(LocalizationCore.TranslateText("全版本"))
                         Exit For
                     Else
                         Segments.Add(EndName & "+")
@@ -679,17 +688,17 @@ Public Class ResourceProject
         Dim ModLoadersForDesc = ModLoaders.Flags().ToList()
         Select Case ModLoadersForDesc.Count
             Case 0
-                ModLoaderDescriptionFull = "未知"
+                ModLoaderDescriptionFull = LocalizationCore.TranslateText("未知")
                 ModLoaderDescriptionPart = ""
             Case 1
-                ModLoaderDescriptionFull = "仅 " & ModLoadersForDesc.Single.ToString
+                ModLoaderDescriptionFull = LocalizationCore.TranslateText("仅 " & ModLoadersForDesc.Single.ToString)
                 ModLoaderDescriptionPart = ModLoadersForDesc.Single.ToString
             Case Else
                 Dim NewestDrop As Integer = If(Drops.Any, Drops.First, 9999)
                 If ModLoadersForDesc.Contains(ModLoaders.Forge) AndAlso
                    (NewestDrop < 140 OrElse ModLoadersForDesc.Contains(ModLoaders.Fabric)) AndAlso
                    (NewestDrop < 200 OrElse ModLoadersForDesc.Contains(ModLoaders.NeoForge)) Then
-                    ModLoaderDescriptionFull = "任意"
+                    ModLoaderDescriptionFull = LocalizationCore.TranslateText("任意")
                     ModLoaderDescriptionPart = ""
                 Else
                     ModLoaderDescriptionFull = ModLoadersForDesc.Join(" / ")
@@ -708,7 +717,7 @@ Public Class ResourceProject
             Else
                 NewItem.SubTitle = Titles.SubTitle
             End If
-            NewItem.Tags = Tags
+            NewItem.Tags = Tags.Select(Function(t) LocalizationCore.TranslateText(t)).ToList()
             NewItem.Description = Description.ReplaceLineEndings("")
             '下边栏
             If Not ShowMcVersionDesc AndAlso Not ShowLoaderDesc Then
@@ -729,12 +738,21 @@ Public Class ResourceProject
                 NewItem.LabVersion.Text = ModLoaderDescriptionFull
             End If
             NewItem.LabSource.Text = If(Platform = ResourcePlatforms.SpigotMC, "SpigotMC", Platform.ToString)
-            NewItem.LabTime.Text = StringUtils.FormatTimeSpan(LastUpdate - Date.Now, True)
-            NewItem.LabDownload.Text =
-                If(DownloadCount > 100000000, Math.Round(DownloadCount / 100000000, 2) & " 亿",
-                If(DownloadCount > 100000, Math.Floor(DownloadCount / 10000) & " 万", DownloadCount))
+            NewItem.LabTime.Text = LocalizationCore.TranslateText(StringUtils.FormatTimeSpan(LastUpdate - Date.Now, True))
+            NewItem.LabDownload.Text = FormatCompactDownloadCount(DownloadCount)
             Return NewItem
         End Function) With {.Height = 64}
+    End Function
+    Public Shared Function FormatCompactDownloadCount(Count As Integer) As String
+        If LocalizationCore.IsEnglishActive() Then
+            If Count >= 1000000000 Then Return Math.Round(Count / 1000000000.0, 2) & "B"
+            If Count >= 1000000 Then Return Math.Round(Count / 1000000.0, 1) & "M"
+            If Count >= 1000 Then Return Math.Round(Count / 1000.0, 1) & "K"
+            Return Count.ToString()
+        End If
+        If Count > 100000000 Then Return Math.Round(Count / 100000000, 2) & " 亿"
+        If Count > 100000 Then Return Math.Floor(Count / 10000) & " 万"
+        Return Count.ToString()
     End Function
     Public Sub ApplyLogoToMyImage(Img As MyImage)
         If String.IsNullOrEmpty(LogoUrl) Then
@@ -810,10 +828,11 @@ Public Class ResourceProject
                 If Not HasModLoaderDescription AndAlso IsModLoaderDescription Then Continue For
                 '去除 “Forge/Fabric” 这一无意义提示
                 If Ex.Length < 16 AndAlso Ex.Lower.Contains("fabric") AndAlso Ex.Lower.Contains("forge") Then Continue For
-                '将 “Forge” 等提示改为 “Forge 版”
+                '将 “Forge” 等提示改为 “Forge 版”（英文模式直接保留加载器名称）
                 If IsModLoaderDescription AndAlso Not Ex.Contains("版") AndAlso
                     Ex.Lower.Replace("neoforge", "").Replace("forge", "").Replace("fabric", "").Replace("quilt", "").Length <= 3 Then
-                    Ex = Ex.Replace("Edition", "").Replace("edition", "").Trim.Capitalize & " 版"
+                    Dim CleanEx = Ex.Replace("Edition", "").Replace("edition", "").Trim.Capitalize
+                    Ex = If(LocalizationCore.IsEnglishActive(), CleanEx, CleanEx & " 版")
                 End If
                 '将 “forge” 等词语的首字母大写
                 Ex = Ex.Replace("neoforge", "NeoForge").Replace("forge", "Forge").Replace("neo", "Neo").Replace("fabric", "Fabric").Replace("quilt", "Quilt")

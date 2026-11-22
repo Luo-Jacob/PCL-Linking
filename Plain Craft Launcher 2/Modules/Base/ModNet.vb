@@ -1925,12 +1925,22 @@ FinishExCatch:
             If Failure = Net.Security.SslPolicyErrors.None Then Return True '已通过验证
             '基于 #3018 和 #5879，仅在明确启用开关且访问微软/Minecraft 验证接口时跳过证书错误
             Logger.Warn($"未通过 SSL 证书验证（{Failure}），提供的证书为 {Certificate?.Subject}，URL：{Request?.Address}")
-            If Request IsNot Nothing AndAlso (Request.Address.Host.Contains("xboxlive") OrElse Request.Address.Host.Contains("minecraftservices") OrElse Request.Address.Host.Contains("microsoftonline") OrElse Request.Address.Host.Contains("login.live.com")) Then
+            If Request IsNot Nothing AndAlso IsAllowedMicrosoftAuthHost(Request.Address.Host) Then
                 Return True
             Else
                 Return False
             End If
         End Function
     End Sub
+
+    Private Function IsAllowedMicrosoftAuthHost(Host As String) As Boolean
+        If String.IsNullOrWhiteSpace(Host) Then Return False
+        Dim H = Host.Trim().ToLowerInvariant()
+        Dim Allowed As String() = {"xboxlive.com", "minecraftservices.com", "microsoftonline.com", "login.live.com"}
+        For Each Domain In Allowed
+            If H = Domain OrElse H.EndsWith("." & Domain, StringComparison.Ordinal) Then Return True
+        Next
+        Return False
+    End Function
 
 End Module
