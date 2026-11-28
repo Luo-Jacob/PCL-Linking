@@ -194,6 +194,8 @@
     <Compile Include="MitCore\OptionsKeybindCore.vb" />
     <Compile Include="MitCore\GitHubReleaseCheckCore.vb" />
     <Compile Include="MitCore\LocalizationCore.vb" />
+    <Compile Include="MitCore\AppEventBusCore.vb" />
+    <Compile Include="MitCore\CloudStorageCore.vb" />
     <Compile Include="Modules\Base\LocalizationService.vb" />
     <Compile Include="Modules\Minecraft\ModSnapshot.vb" />
     <Compile Include="Modules\Minecraft\ModPrecheck.vb" />

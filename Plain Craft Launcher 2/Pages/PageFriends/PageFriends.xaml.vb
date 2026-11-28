@@ -71,8 +71,17 @@
 
         Dim RelayRaw = ModFriends.RelayUrl()
         Dim RelayHost = RelayRaw.Replace("https://", "").Replace("http://", "")
-        LabRelay.Text = LocalizationCore.TranslateText(If(RelayHost = "ntfy.sh", "中继: 公共节点", $"中继: {RelayHost}"))
-        LabRelay.ToolTip = LocalizationCore.TranslateText($"当前中继：{RelayRaw}（每 {D.PollSeconds} 秒后台拉取一次）")
+        Dim BaseRelayText = LocalizationCore.TranslateText(If(RelayHost = "ntfy.sh", "中继: 公共节点", $"中继: {RelayHost}"))
+        Dim EffProvider = ModFriends.ResolveEffectiveFileStorageProvider()
+        Dim ProviderTag As String = ""
+        Select Case EffProvider
+            Case "s3" : ProviderTag = "S3"
+            Case "webdav" : ProviderTag = "DAV"
+            Case "pixeldrain" : ProviderTag = "PD"
+        End Select
+        LabRelay.Text = If(String.IsNullOrEmpty(ProviderTag), BaseRelayText, $"{BaseRelayText} · {ProviderTag}")
+        LabRelay.ToolTip = LocalizationCore.TranslateText($"当前中继：{RelayRaw}（每 {D.PollSeconds} 秒后台拉取一次）") &
+                           vbCrLf & LocalizationCore.TranslateText($"当前大文件默认存储：{If(EffProvider = "ntfy", "ntfy 分片（3小时）", EffProvider.ToUpperInvariant())}")
 
         Dim BlockedCount = D.Blocked.Count
         BtnUnblock.Text = LocalizationCore.TranslateText(If(BlockedCount > 0, $"黑名单 ({BlockedCount})", "黑名单"))
@@ -108,6 +117,7 @@
             Case "invite" : Return Prefix & LocalizationCore.TranslateText("[联机邀请]")
             Case "modsync" : Return Prefix & LocalizationCore.TranslateText("[Mod 清单]")
             Case "file" : Return Prefix & LocalizationCore.TranslateText("[文件] ") & Msg.FileName
+            Case "save_relay" : Return Prefix & LocalizationCore.TranslateText("[存档接力] ") & If(String.IsNullOrWhiteSpace(Msg.WorldName), Msg.FileName, Msg.WorldName)
             Case "group_invite" : Return Prefix & LocalizationCore.TranslateText("[群邀请] ") & Msg.GroupInviteName
             Case "inst_sync" : Return Prefix & LocalizationCore.TranslateText("[实例同步] ") & Msg.SyncChannel
             Case Else
@@ -348,20 +358,111 @@
         BtnSend.IsEnabled = True
     End Sub
 
+    Private PinnedBarCollapsed As Boolean = False
+
+    Private Sub BtnTogglePinned_Click() Handles BtnTogglePinned.Click
+        PinnedBarCollapsed = Not PinnedBarCollapsed
+        RefreshPinnedBar(If(CurrentFriendId = "", New List(Of ModFriends.FriendMessage),
+                            If(CurrentIsGroup, ModFriends.GetGroupMessages(CurrentFriendId), ModFriends.GetMessages(CurrentFriendId))))
+    End Sub
+
+    Private Sub RefreshPinnedBar(Msgs As IList(Of ModFriends.FriendMessage))
+        If BorderPinnedBar Is Nothing OrElse PanPinnedChips Is Nothing Then Return
+        PanPinnedChips.Children.Clear()
+        If String.IsNullOrEmpty(CurrentFriendId) OrElse Msgs Is Nothing OrElse Not Msgs.Any() Then
+            BorderPinnedBar.Visibility = Visibility.Collapsed
+            Return
+        End If
+
+        Dim Ordered = Msgs.OrderByDescending(Function(m) m.Time).ToList()
+        Dim LatestInvite = Ordered.FirstOrDefault(Function(m) m.Kind = "invite" AndAlso Not m.FromMe AndAlso Not String.IsNullOrWhiteSpace(m.InviteCode))
+        Dim LatestRelay = Ordered.FirstOrDefault(Function(m) m.Kind = "save_relay" AndAlso Not String.IsNullOrWhiteSpace(m.FileUrl))
+        Dim LatestSync = Ordered.FirstOrDefault(Function(m) m.Kind = "inst_sync" AndAlso Not String.IsNullOrWhiteSpace(m.ModSyncData))
+        Dim LatestFile = Ordered.FirstOrDefault(Function(m) m.Kind = "file" AndAlso Not String.IsNullOrWhiteSpace(m.FileUrl))
+
+        Dim PinnedCount = If(LatestInvite IsNot Nothing, 1, 0) +
+                          If(LatestRelay IsNot Nothing, 1, 0) +
+                          If(LatestSync IsNot Nothing, 1, 0) +
+                          If(LatestFile IsNot Nothing, 1, 0)
+        If PinnedCount = 0 Then
+            BorderPinnedBar.Visibility = Visibility.Collapsed
+            Return
+        End If
+
+        BorderPinnedBar.Visibility = Visibility.Visible
+        BtnTogglePinned.Text = LocalizationCore.TranslateText(If(PinnedBarCollapsed, "展开", "收起"))
+        LabPinnedHeader.Text = LocalizationCore.TranslateText($"置顶重要卡片 ({PinnedCount})")
+        PanPinnedChips.Visibility = If(PinnedBarCollapsed, Visibility.Collapsed, Visibility.Visible)
+        If PinnedBarCollapsed Then Return
+
+        If LatestInvite IsNot Nothing Then
+            Dim CapInvite = LatestInvite
+            Dim ChipInvite As New MyButton With {
+                .Text = LocalizationCore.TranslateText("最新联机邀请 · 加入"),
+                .Height = 24,
+                .Padding = New Thickness(9, 0, 9, 0),
+                .Margin = New Thickness(0, 2, 6, 2),
+                .ColorType = MyButton.ColorState.Highlight
+            }
+            AddHandler ChipInvite.Click, Sub() PageLinkMain.Join(CapInvite.InviteCode, CapInvite.InviteVerify)
+            PanPinnedChips.Children.Add(ChipInvite)
+        End If
+        If LatestRelay IsNot Nothing Then
+            Dim CapRelay = LatestRelay
+            Dim WLabel = If(String.IsNullOrWhiteSpace(CapRelay.WorldName), CapRelay.FileName, CapRelay.WorldName)
+            Dim ChipRelay As New MyButton With {
+                .Text = LocalizationCore.TranslateText("接力存档: ") & WLabel,
+                .Height = 24,
+                .Padding = New Thickness(9, 0, 9, 0),
+                .Margin = New Thickness(0, 2, 6, 2)
+            }
+            AddHandler ChipRelay.Click, Sub() ApplySaveRelayFromMessage(CapRelay, ChipRelay, ChipRelay.Text)
+            PanPinnedChips.Children.Add(ChipRelay)
+        End If
+        If LatestSync IsNot Nothing Then
+            Dim CapSync = LatestSync
+            Dim ChipSync As New MyButton With {
+                .Text = LocalizationCore.TranslateText("实例同步: ") & CapSync.SyncChannel,
+                .Height = 24,
+                .Padding = New Thickness(9, 0, 9, 0),
+                .Margin = New Thickness(0, 2, 6, 2)
+            }
+            AddHandler ChipSync.Click,
+                Sub()
+                    Dim ParsedM = ModFriends.DecompressModSyncManifest(CapSync.ModSyncData)
+                    If ParsedM IsNot Nothing Then StartFriendModSyncDiff(ParsedM)
+                End Sub
+            PanPinnedChips.Children.Add(ChipSync)
+        End If
+        If LatestFile IsNot Nothing Then
+            Dim CapFile = LatestFile
+            Dim ChipFile As New MyButton With {
+                .Text = LocalizationCore.TranslateText("最新文件: ") & CapFile.FileName,
+                .Height = 24,
+                .Padding = New Thickness(9, 0, 9, 0),
+                .Margin = New Thickness(0, 2, 6, 2)
+            }
+            AddHandler ChipFile.Click, Sub() PromptAndDownloadEncryptedFile(CapFile.FileName, CapFile.FileUrl, CapFile.FileKey, CapFile.FileSha256, ChipFile, ChipFile.Text)
+            PanPinnedChips.Children.Add(ChipFile)
+        End If
+    End Sub
+
     Private Sub RenderMessages(Optional ForceScroll As Boolean = False)
         UpdateChatHeader()
+        If BorderPinnedBar IsNot Nothing AndAlso CurrentFriendId = "" Then BorderPinnedBar.Visibility = Visibility.Collapsed
 
         Dim ShouldScroll As Boolean = ForceScroll OrElse (PanBack.ScrollableHeight - PanBack.VerticalOffset <= 80)
         PanMessages.Children.Clear()
 
         If CurrentFriendId = "" Then
             LabEmptyHeading.Text = LocalizationCore.TranslateText("选择一位好友或群聊开始沟通")
-            LabEmptySub.Text = LocalizationCore.TranslateText("支持私聊与多人群聊、端到端加密文件传输（<= 10 MB）、启动 PCL Linking 自动实例同步与联机邀请。")
+            LabEmptySub.Text = LocalizationCore.TranslateText("支持私聊与多人群聊、端到端加密大文件传输与离线取件码、启动 PCL Linking 自动实例同步与联机邀请。")
             PanNoChat.Visibility = Visibility.Visible
             Return
         End If
 
         Dim List = If(CurrentIsGroup, ModFriends.GetGroupMessages(CurrentFriendId), ModFriends.GetMessages(CurrentFriendId))
+        RefreshPinnedBar(List)
         If List.Count = 0 Then
             LabEmptyHeading.Text = LocalizationCore.TranslateText("还没有聊天记录")
             LabEmptySub.Text = LocalizationCore.TranslateText(If(CurrentIsGroup,
@@ -404,6 +505,8 @@
                     PanMessages.Children.Add(BuildInviteBubble(M))
                 Case "file"
                     PanMessages.Children.Add(BuildFileBubble(M))
+                Case "save_relay"
+                    PanMessages.Children.Add(BuildSaveRelayBubble(M))
                 Case "group_invite"
                     PanMessages.Children.Add(BuildGroupInviteBubble(M))
                 Case "inst_sync"
@@ -602,12 +705,69 @@
         Return BtnRetry
     End Function
 
+    Private Shared Function FormatByteSizeText(SizeBytes As Long) As String
+        If SizeBytes >= 1073741824L Then Return $"{SizeBytes / 1073741824.0:0.00} GB"
+        If SizeBytes >= 1048576L Then Return $"{SizeBytes / 1048576.0:0.00} MB"
+        Return $"{Math.Max(1.0, SizeBytes / 1024.0):0.0} KB"
+    End Function
+
+    Private Sub PromptAndDownloadEncryptedFile(FileName As String, FileUrl As String, KeyB64 As String, Sha256Hex As String,
+                                               TriggerBtn As MyButton, IdleText As String)
+        Dim RawFileName = If(String.IsNullOrWhiteSpace(FileName), "pcl_linking_file.bin", FileName)
+        Dim SafeFileName = IO.Path.GetFileName(RawFileName)
+        For Each BadCh In IO.Path.GetInvalidFileNameChars()
+            SafeFileName = SafeFileName.Replace(BadCh, "_"c)
+        Next
+        If String.IsNullOrWhiteSpace(SafeFileName) OrElse SafeFileName = "." OrElse SafeFileName = ".." Then SafeFileName = "pcl_linking_file.bin"
+        Dim Dlg As New Microsoft.Win32.SaveFileDialog With {
+            .FileName = SafeFileName,
+            .Title = LocalizationCore.TranslateText("保存解密后的好友文件")
+        }
+        Try
+            If Dlg.ShowDialog() <> True Then Return
+        Catch exDlg As Exception
+            Hint($"打开保存对话框失败：{exDlg.Message}", HintType.Red)
+            Return
+        End Try
+        Dim SavePath = Dlg.FileName
+        TriggerBtn.IsEnabled = False
+        TriggerBtn.Text = LocalizationCore.TranslateText("解密下载中…")
+        RunInNewThread(
+            Sub()
+                Dim Err = ModFriends.DownloadAndDecryptFileToPath(
+                    FileUrl, KeyB64, Sha256Hex, SavePath,
+                    Sub(Stage, Cur, Total)
+                        RunInUi(
+                            Sub()
+                                If Total > 1 Then
+                                    TriggerBtn.Text = LocalizationCore.TranslateText("下载") & $" {Cur}/{Total}…"
+                                Else
+                                    TriggerBtn.Text = LocalizationCore.TranslateText("解密下载中…")
+                                End If
+                            End Sub)
+                    End Sub)
+                RunInUi(
+                    Sub()
+                        TriggerBtn.IsEnabled = True
+                        TriggerBtn.Text = LocalizationCore.TranslateText(IdleText)
+                        If Err IsNot Nothing Then
+                            Hint(Err, HintType.Red)
+                        Else
+                            Hint($"文件已解密保存至：{SavePath}", HintType.Green)
+                            If MyMsgBox($"文件已成功解密并保存至：{vbCrLf}{SavePath}", "下载完成", "打开所在文件夹", "关闭") = 1 Then
+                                OpenExplorer(IO.Path.GetDirectoryName(SavePath))
+                            End If
+                        End If
+                    End Sub)
+            End Sub, "Download Encrypted Friend File")
+    End Sub
+
     Private Function BuildFileBubble(M As ModFriends.FriendMessage) As FrameworkElement
-        Dim SizeText = If(M.FileSize >= 1048576L, $"{M.FileSize / 1048576.0:0.00} MB", $"{Math.Max(1.0, M.FileSize / 1024.0):0.0} KB")
+        Dim SizeText = FormatByteSizeText(M.FileSize)
         Dim Card As New Border With {
             .Padding = New Thickness(13, 10, 13, 10),
             .Margin = New Thickness(0, 2, 0, 10),
-            .Width = 296,
+            .Width = 318,
             .CornerRadius = New CornerRadius(8),
             .BorderThickness = New Thickness(1)
         }
@@ -620,66 +780,267 @@
         TagBadge.SetResourceReference(Border.BackgroundProperty, "ColorBrush3")
         TagBadge.Child = New TextBlock With {.Text = LocalizationCore.TranslateText("加密文件"), .Foreground = Brushes.White, .FontSize = 10.5, .FontWeight = FontWeights.Bold}
         Header.Children.Add(TagBadge)
-        Dim NameTb As New TextBlock With {.Text = If(String.IsNullOrWhiteSpace(M.FileName), LocalizationCore.TranslateText("未知文件"), M.FileName), .FontWeight = FontWeights.Bold, .FontSize = 13, .TextTrimming = TextTrimming.CharacterEllipsis, .MaxWidth = 200}
+        Dim NameTb As New TextBlock With {.Text = If(String.IsNullOrWhiteSpace(M.FileName), LocalizationCore.TranslateText("未知文件"), M.FileName), .FontWeight = FontWeights.Bold, .FontSize = 13, .TextTrimming = TextTrimming.CharacterEllipsis, .MaxWidth = 220}
         NameTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1")
         Header.Children.Add(NameTb)
         Stack.Children.Add(Header)
 
-        Dim DescTb As New TextBlock With {.Text = LocalizationCore.TranslateText($"大小：{SizeText} · AES-256 端到端加密（中继暂存 3 小时）"), .FontSize = 11.5, .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(0, 2, 0, 8)}
+        Dim IsPixeldrain = Not String.IsNullOrWhiteSpace(M.FileUrl) AndAlso M.FileUrl.IndexOf("pixeldrain.com", StringComparison.OrdinalIgnoreCase) >= 0
+        Dim IsS3 = Not String.IsNullOrWhiteSpace(M.FileUrl) AndAlso M.FileUrl.IndexOf("X-Amz-Signature", StringComparison.OrdinalIgnoreCase) >= 0
+        Dim IsManifest = Not String.IsNullOrWhiteSpace(M.FileUrl) AndAlso M.FileUrl.StartsWith(FriendsCryptoProtocol.ManifestUrlPrefix, StringComparison.OrdinalIgnoreCase)
+        Dim StorageNoteKey = If(IsPixeldrain,
+                                "AES-256 端到端加密（Pixeldrain 长期托管 120 天）",
+                                If(IsS3, "AES-256 端到端加密（S3 预签名云端存储）",
+                                   If(IsManifest, "AES-256 分片端到端加密（支持断点续传）", "AES-256 端到端加密")))
+        Dim DescTb As New TextBlock With {
+            .Text = LocalizationCore.TranslateText("大小：") & SizeText & " · " & LocalizationCore.TranslateText(StorageNoteKey),
+            .FontSize = 11.5,
+            .TextWrapping = TextWrapping.Wrap,
+            .Margin = New Thickness(0, 2, 0, 8)
+        }
         DescTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3")
         Stack.Children.Add(DescTb)
 
         If Not String.IsNullOrWhiteSpace(M.FileUrl) Then
-            Dim BtnSave As New MyButton With {.Text = LocalizationCore.TranslateText("解密并下载保存"), .Height = 28, .Padding = New Thickness(12, 0, 12, 0), .ColorType = MyButton.ColorState.Highlight, .HorizontalAlignment = HorizontalAlignment.Left}
-            Dim CapUrl = M.FileUrl, CapKey = M.FileKey, CapSha = M.FileSha256, CapName = M.FileName
+            Dim CapUrl = M.FileUrl, CapKey = M.FileKey, CapSha = M.FileSha256, CapName = M.FileName, CapSize = M.FileSize
+            Dim CapTarget = M.PeerId, CapIsGrp = M.IsGroup
+            Dim BtnRow As New WrapPanel With {.Orientation = Orientation.Horizontal}
+
+            Dim BtnSave As New MyButton With {
+                .Text = LocalizationCore.TranslateText("解密并下载保存"),
+                .Height = 28,
+                .Padding = New Thickness(10, 0, 10, 0),
+                .Margin = New Thickness(0, 2, 6, 2),
+                .ColorType = MyButton.ColorState.Highlight
+            }
             AddHandler BtnSave.Click,
                 Sub()
-                    Dim RawFileName = If(String.IsNullOrWhiteSpace(CapName), "pcl_linking_file.bin", CapName)
-                    Dim SafeFileName = IO.Path.GetFileName(RawFileName)
-                    For Each BadCh In IO.Path.GetInvalidFileNameChars()
-                        SafeFileName = SafeFileName.Replace(BadCh, "_"c)
-                    Next
-                    If String.IsNullOrWhiteSpace(SafeFileName) OrElse SafeFileName = "." OrElse SafeFileName = ".." Then SafeFileName = "pcl_linking_file.bin"
-                    Dim Dlg As New Microsoft.Win32.SaveFileDialog With {
-                        .FileName = SafeFileName,
-                        .Title = LocalizationCore.TranslateText("保存解密后的好友文件")
-                    }
-                    Try
-                        If Dlg.ShowDialog() <> True Then Return
-                    Catch exDlg As Exception
-                        Hint($"打开保存对话框失败：{exDlg.Message}", HintType.Red)
-                        Return
-                    End Try
-                    Dim SavePath = Dlg.FileName
-                    BtnSave.IsEnabled = False
-                    BtnSave.Text = LocalizationCore.TranslateText("解密下载中…")
-                    RunInNewThread(
-                        Sub()
-                            Dim PlainBytes As Byte() = Nothing
-                            Dim Err = ModFriends.DownloadAndDecryptBlob(CapUrl, CapKey, CapSha, PlainBytes)
-                            If Err Is Nothing AndAlso PlainBytes IsNot Nothing Then
-                                Try
-                                    IO.File.WriteAllBytes(SavePath, PlainBytes)
-                                Catch exIo As Exception
-                                    Err = "保存文件失败：" & exIo.Message
-                                End Try
-                            End If
-                            RunInUi(
-                                Sub()
-                                    BtnSave.IsEnabled = True
-                                    BtnSave.Text = LocalizationCore.TranslateText("解密并下载保存")
-                                    If Err IsNot Nothing Then
-                                        Hint(Err, HintType.Red)
-                                    Else
-                                        Hint($"文件已解密保存至：{SavePath}", HintType.Green)
-                                        If MyMsgBox($"文件已成功解密并保存至：{vbCrLf}{SavePath}", "下载完成", "打开所在文件夹", "关闭") = 1 Then
-                                            OpenExplorer(IO.Path.GetDirectoryName(SavePath))
-                                        End If
-                                    End If
-                                End Sub)
-                        End Sub, "Download Encrypted Friend File")
+                    PromptAndDownloadEncryptedFile(CapName, CapUrl, CapKey, CapSha, BtnSave, "解密并下载保存")
                 End Sub
-            Stack.Children.Add(BtnSave)
+            BtnRow.Children.Add(BtnSave)
+
+            If Not String.IsNullOrWhiteSpace(CapName) AndAlso CapName.StartsWith("EnvPack_", StringComparison.OrdinalIgnoreCase) AndAlso CapName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) Then
+                Dim BtnApplyEnv As New MyButton With {
+                    .Text = LocalizationCore.TranslateText("应用环境包到当前实例"),
+                    .Height = 28,
+                    .Padding = New Thickness(10, 0, 10, 0),
+                    .Margin = New Thickness(0, 2, 6, 2),
+                    .ToolTip = LocalizationCore.TranslateText("解密下载并一键解压覆写当前选中实例的 mods/config 等环境目录（覆盖 config 前自动备份）")
+                }
+                AddHandler BtnApplyEnv.Click,
+                    Sub()
+                        Dim InstSnap = McInstanceSelected
+                        If InstSnap Is Nothing Then
+                            Hint("请先在主界面选择一个本地游戏实例！", HintType.Red)
+                            Return
+                        End If
+                        If MyMsgBox($"即将解密下载环境快照「{CapName}」({SizeText}) 并覆盖写入实例「{InstSnap.Name}」的对应目录。{vbCrLf}覆盖 config 前会自动备份至 EnvPackBackups\。确定继续吗？",
+                                    "一键应用整合包环境快照", "下载并应用", "取消") <> 1 Then Return
+                        BtnApplyEnv.IsEnabled = False
+                        BtnApplyEnv.Text = LocalizationCore.TranslateText("下载应用中…")
+                        Dim CacheKey = If(String.IsNullOrWhiteSpace(CapSha), Guid.NewGuid().ToString("N"), CapSha).Substring(0, 12)
+                        Dim CacheZip = IO.Path.Combine(PathUtils.RemoveExtendedPrefix(PathTemp), "Cache", $"ApplyEnv_{CacheKey}.zip")
+                        RunInNewThread(
+                            Sub()
+                                Dim Err = ModFriends.DownloadAndDecryptFileToPath(
+                                    CapUrl, CapKey, CapSha, CacheZip,
+                                    Sub(St, Cur, Tot)
+                                        RunInUi(Sub() BtnApplyEnv.Text = If(Tot > 1, $"{LocalizationCore.TranslateText("下载")} {Cur}/{Tot}", LocalizationCore.TranslateText("下载应用中…")))
+                                    End Sub)
+                                Dim ExtractedCount As Integer = 0
+                                Dim BackupNote As String = ""
+                                If Err Is Nothing Then
+                                    Err = ModInstanceSync.ApplyEnvironmentPackZip(InstSnap, CacheZip, ExtractedCount, BackupNote)
+                                End If
+                                Try
+                                    If IO.File.Exists(CacheZip) Then IO.File.Delete(CacheZip)
+                                Catch
+                                End Try
+                                RunInUi(
+                                    Sub()
+                                        BtnApplyEnv.IsEnabled = True
+                                        BtnApplyEnv.Text = LocalizationCore.TranslateText("应用环境包到当前实例")
+                                        If Err IsNot Nothing Then
+                                            Hint(Err, HintType.Red)
+                                        Else
+                                            Dim NoteStr = If(String.IsNullOrEmpty(BackupNote), "", $"（{BackupNote}）")
+                                            Hint($"环境快照应用成功！已写入 {ExtractedCount} 个文件{NoteStr}", HintType.Green)
+                                        End If
+                                    End Sub)
+                            End Sub, "Download & Apply Env Pack")
+                    End Sub
+                BtnRow.Children.Add(BtnApplyEnv)
+            End If
+
+            Dim BtnCopyCode As New MyButton With {
+                .Text = LocalizationCore.TranslateText("复制取件码"),
+                .Height = 28,
+                .Padding = New Thickness(10, 0, 10, 0),
+                .Margin = New Thickness(0, 2, 6, 2),
+                .ToolTip = LocalizationCore.TranslateText("生成离线加密取件码；即使好友超过 12 小时上线收不到卡片，也能通过取件码随时下载")
+            }
+            AddHandler BtnCopyCode.Click,
+                Sub()
+                    Dim Code = ModFriends.BuildFilePickupCode(CapName, CapSize, CapUrl, CapKey, CapSha)
+                    ClipboardSet(Code, False)
+                    Hint("已复制离线加密取件码！可通过 QQ/微信发给好友，在好友页点「取件码」随时解密下载。", HintType.Green)
+                End Sub
+            BtnRow.Children.Add(BtnCopyCode)
+
+            If M.FromMe Then
+                Dim BtnResendCard As New MyButton With {
+                    .Text = LocalizationCore.TranslateText("重发卡片"),
+                    .Height = 28,
+                    .Padding = New Thickness(10, 0, 10, 0),
+                    .Margin = New Thickness(0, 2, 0, 2),
+                    .ToolTip = LocalizationCore.TranslateText("无需重新上传密文，直接向当前会话再次推送此文件卡片")
+                }
+                AddHandler BtnResendCard.Click,
+                    Sub()
+                        BtnResendCard.IsEnabled = False
+                        BtnResendCard.Text = LocalizationCore.TranslateText("推送中…")
+                        RunInNewThread(
+                            Sub()
+                                Dim NewMsg As New ModFriends.FriendMessage With {
+                                    .Kind = "file",
+                                    .Text = $"发送了文件：{CapName}",
+                                    .FileName = CapName,
+                                    .FileSize = CapSize,
+                                    .FileUrl = CapUrl,
+                                    .FileKey = CapKey,
+                                    .FileSha256 = CapSha
+                                }
+                                Dim Err = ModFriends.SendRichMessage(CapTarget, CapIsGrp, NewMsg)
+                                RunInUi(
+                                    Sub()
+                                        BtnResendCard.IsEnabled = True
+                                        BtnResendCard.Text = LocalizationCore.TranslateText("重发卡片")
+                                        If Err IsNot Nothing Then
+                                            Hint(Err, HintType.Red)
+                                        Else
+                                            Hint("已重新向会话推送该文件卡片！", HintType.Green)
+                                        End If
+                                    End Sub)
+                            End Sub, "Resend Encrypted File Card")
+                    End Sub
+                BtnRow.Children.Add(BtnResendCard)
+            End If
+
+            Stack.Children.Add(BtnRow)
+        End If
+        Card.Child = Stack
+
+        Dim Outer As New StackPanel With {.Orientation = Orientation.Horizontal, .HorizontalAlignment = If(M.FromMe, HorizontalAlignment.Right, HorizontalAlignment.Left)}
+        If M.FromMe AndAlso M.SendFailed Then Outer.Children.Add(BuildRetryButton(M))
+        Outer.Children.Add(Card)
+        Return Outer
+    End Function
+
+    Private Sub ApplySaveRelayFromMessage(M As ModFriends.FriendMessage, TriggerBtn As MyButton, IdleText As String)
+        If M Is Nothing OrElse String.IsNullOrWhiteSpace(M.FileUrl) Then Return
+        Dim TargetInst = McInstanceSelected
+        If TargetInst Is Nothing Then
+            Hint("请先在左侧/主界面选中一个游戏实例来接收接力存档！", HintType.Red)
+            Return
+        End If
+        Dim TargetWorldName = If(String.IsNullOrWhiteSpace(M.WorldName), IO.Path.GetFileNameWithoutExtension(If(M.FileName, "RelayWorld")), M.WorldName)
+        Dim SizeText = FormatByteSizeText(M.FileSize)
+        If MyMsgBox($"即将接收「{TargetWorldName}」（{SizeText}）并写入实例「{TargetInst.Name}」的 saves\ 目录。{vbCrLf}若本地已有同名存档，将先自动滚动备份至 SaveRelayBackups\ 防丢失。是否继续？",
+                    "接力导入好友存档", "下载并导入接力存档", "取消") <> 1 Then Return
+        TriggerBtn.IsEnabled = False
+        TriggerBtn.Text = LocalizationCore.TranslateText("导入中…")
+        Dim RelayKey = If(String.IsNullOrWhiteSpace(M.FileSha256), Guid.NewGuid().ToString("N"), M.FileSha256).Substring(0, 12)
+        Dim TempZip = IO.Path.Combine(PathUtils.RemoveExtendedPrefix(PathTemp), "Cache", $"RecvRelay_{RelayKey}.zip")
+        RunInNewThread(
+            Sub()
+                Dim Err = ModFriends.DownloadAndDecryptFileToPath(
+                    M.FileUrl, M.FileKey, M.FileSha256, TempZip,
+                    Sub(St, Cur, Tot)
+                        RunInUi(Sub() TriggerBtn.Text = If(Tot > 1, $"{LocalizationCore.TranslateText("下载")} {Cur}/{Tot}", LocalizationCore.TranslateText("导入中…")))
+                    End Sub)
+                Dim FinalWorldDir As String = "", BackupNote As String = ""
+                If Err Is Nothing Then
+                    Err = ModInstanceSync.ApplySaveRelayZipToInstance(TargetInst, TempZip, TargetWorldName, FinalWorldDir, BackupNote)
+                End If
+                Try
+                    If IO.File.Exists(TempZip) Then IO.File.Delete(TempZip)
+                Catch
+                End Try
+                RunInUi(
+                    Sub()
+                        TriggerBtn.IsEnabled = True
+                        TriggerBtn.Text = LocalizationCore.TranslateText(IdleText)
+                        If Err IsNot Nothing Then
+                            Hint(Err, HintType.Red)
+                        Else
+                            Dim NoteStr = If(String.IsNullOrEmpty(BackupNote), "", vbCrLf & BackupNote)
+                            Hint($"接力存档已安全导入至 {IO.Path.GetFileName(FinalWorldDir)}！", HintType.Green)
+                            If MyMsgBox($"接力存档「{IO.Path.GetFileName(FinalWorldDir)}」已导入到实例「{TargetInst.Name}」并完成 SHA-256 校验！{NoteStr}{vbCrLf}{vbCrLf}进入单人游戏即可打开该世界并对局域网开放接力当房主。",
+                                        "存档接力就绪", "查看存档文件夹", "完成") = 1 Then
+                                OpenExplorer(FinalWorldDir)
+                            End If
+                        End If
+                    End Sub)
+            End Sub, "Import Save Relay")
+    End Sub
+
+    Private Function BuildSaveRelayBubble(M As ModFriends.FriendMessage) As FrameworkElement
+        Dim SizeText = FormatByteSizeText(M.FileSize)
+        Dim WorldTitle = If(String.IsNullOrWhiteSpace(M.WorldName), M.FileName, M.WorldName)
+        Dim Card As New Border With {
+            .Padding = New Thickness(13, 10, 13, 10),
+            .Margin = New Thickness(0, 2, 0, 10),
+            .Width = 318,
+            .CornerRadius = New CornerRadius(8),
+            .BorderThickness = New Thickness(1)
+        }
+        Card.SetResourceReference(Border.BackgroundProperty, If(M.FromMe, "ColorBrush7", "ColorBrushSurface"))
+        Card.SetResourceReference(Border.BorderBrushProperty, "ColorBrush3")
+
+        Dim Stack As New StackPanel()
+        Dim Header As New StackPanel With {.Orientation = Orientation.Horizontal, .Margin = New Thickness(0, 0, 0, 4)}
+        Dim TagBadge As New Border With {.CornerRadius = New CornerRadius(4), .Padding = New Thickness(6, 2, 6, 2), .Margin = New Thickness(0, 0, 7, 0), .Background = New SolidColorBrush(Color.FromRgb(46, 154, 106))}
+        TagBadge.Child = New TextBlock With {.Text = LocalizationCore.TranslateText("存档接力"), .Foreground = Brushes.White, .FontSize = 10.5, .FontWeight = FontWeights.Bold}
+        Header.Children.Add(TagBadge)
+        Dim NameTb As New TextBlock With {.Text = WorldTitle, .FontWeight = FontWeights.Bold, .FontSize = 13, .TextTrimming = TextTrimming.CharacterEllipsis, .MaxWidth = 220}
+        NameTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1")
+        Header.Children.Add(NameTb)
+        Stack.Children.Add(Header)
+
+        Dim DescTb As New TextBlock With {
+            .Text = LocalizationCore.TranslateText("大小：") & SizeText & " · " & LocalizationCore.TranslateText("轮值主机共享存档（导入自动备份本地同名世界）"),
+            .FontSize = 11.5,
+            .TextWrapping = TextWrapping.Wrap,
+            .Margin = New Thickness(0, 2, 0, 8)
+        }
+        DescTb.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3")
+        Stack.Children.Add(DescTb)
+
+        If Not String.IsNullOrWhiteSpace(M.FileUrl) Then
+            Dim BtnRow As New WrapPanel With {.Orientation = Orientation.Horizontal}
+            Dim BtnImport As New MyButton With {
+                .Text = LocalizationCore.TranslateText("接力导入到当前实例"),
+                .Height = 28,
+                .Padding = New Thickness(10, 0, 10, 0),
+                .Margin = New Thickness(0, 2, 6, 2),
+                .ColorType = MyButton.ColorState.Highlight
+            }
+            AddHandler BtnImport.Click, Sub() ApplySaveRelayFromMessage(M, BtnImport, "接力导入到当前实例")
+            BtnRow.Children.Add(BtnImport)
+
+            Dim BtnCode As New MyButton With {
+                .Text = LocalizationCore.TranslateText("复制取件码"),
+                .Height = 28,
+                .Padding = New Thickness(10, 0, 10, 0),
+                .Margin = New Thickness(0, 2, 0, 2)
+            }
+            AddHandler BtnCode.Click,
+                Sub()
+                    ClipboardSet(ModFriends.BuildFilePickupCode(M.FileName, M.FileSize, M.FileUrl, M.FileKey, M.FileSha256), False)
+                    Hint("已复制存档接力取件码！", HintType.Green)
+                End Sub
+            BtnRow.Children.Add(BtnCode)
+            Stack.Children.Add(BtnRow)
         End If
         Card.Child = Stack
 
@@ -1035,13 +1396,34 @@
         End If
     End Sub
 
+    Private Sub BtnPickupFile_Click() Handles BtnPickupFile.Click
+        If Not BtnPickupFile.IsEnabled Then Return
+        Dim CodeInput = MyMsgBoxInput("通过离线加密取件码下载",
+            $"粘贴好友发送的取件码（以 {FriendsCryptoProtocol.PickupCodePrefix} 开头），即可在好友离线后随时从云端拉取并端到端解密保存文件：",
+            HintText:=FriendsCryptoProtocol.PickupCodePrefix & "...")
+        If CodeInput Is Nothing Then Return
+        Dim FileName As String = "", FileUrl As String = "", FileKey As String = "", FileSha As String = "", ParseErr As String = Nothing
+        Dim FileSize As Long = 0
+        If Not ModFriends.TryParseFilePickupCode(CodeInput, FileName, FileSize, FileUrl, FileKey, FileSha, ParseErr) Then
+            Hint(ParseErr, HintType.Red)
+            Return
+        End If
+        Dim SizeLabel = FormatByteSizeText(FileSize)
+        Dim HostNote = If(FileUrl.IndexOf("pixeldrain.com", StringComparison.OrdinalIgnoreCase) >= 0,
+                          "Pixeldrain 长期托管",
+                          "配置中继")
+        If MyMsgBox($"已识别离线加密文件：{vbCrLf}文件名：{FileName}{vbCrLf}大小：{SizeLabel}{vbCrLf}存储源：{HostNote}{vbCrLf}{vbCrLf}下载后将自动校验 SHA-256 完整性摘要。是否选择保存位置？",
+                    "确认解密下载", "选择保存位置", "取消") <> 1 Then Return
+        PromptAndDownloadEncryptedFile(FileName, FileUrl, FileKey, FileSha, BtnPickupFile, "取件码")
+    End Sub
+
     Private Sub BtnSendFile_Click() Handles BtnSendFile.Click
         If CurrentFriendId = "" Then
             Hint("请先选择一个好友或群聊再发送文件！", HintType.Red)
             Return
         End If
         Dim Dlg As New Microsoft.Win32.OpenFileDialog With {
-            .Title = "选择要加密发送的文件（最大 10 MB）",
+            .Title = LocalizationCore.TranslateText("选择要加密发送的文件（支持大文件分片加密）"),
             .Filter = "所有文件 (*.*)|*.*|Mod 与压缩包 (*.jar;*.zip)|*.jar;*.zip|图片 (*.png;*.jpg;*.webp)|*.png;*.jpg;*.webp"
         }
         If Dlg.ShowDialog() <> True Then Return
@@ -1058,37 +1440,76 @@
                 Hint("无法发送空文件！", HintType.Red)
                 Return
             End If
-            If Info.Length > ModFriends.MaxEncryptedFileBytes Then
-                Hint($"文件过大（{Info.Length / 1048576.0:0.1} MB），单文件上限为 {ModFriends.MaxEncryptedFileBytes \ (1024 * 1024)} MB！", HintType.Red)
-                Return
-            End If
-            Dim SizeLabel = If(Info.Length >= 1048576L, $"{Info.Length / 1048576.0:0.2} MB", $"{Math.Max(1.0, Info.Length / 1024.0):0.0} KB")
-            If MyMsgBox($"确定将「{Info.Name}」（{SizeLabel}）进行 AES-256 加密后上传中继并发送给当前会话吗？", "发送加密文件", "加密发送", "取消") <> 1 Then Return
+            Dim SizeLabel = FormatByteSizeText(Info.Length)
+            Dim EffProvider = ModFriends.ResolveEffectiveFileStorageProvider()
+            Dim RouteDesc As String
+            Select Case EffProvider
+                Case "s3"
+                    RouteDesc = "将通过已配置的 S3 兼容对象存储（R2 / OSS / MinIO）进行 AES-256 流式分片加密托管并生成预签名链接。"
+                Case "webdav"
+                    RouteDesc = "将通过已配置的 WebDAV / Alist 存储进行 AES-256 流式分片加密上传（长期保存）。"
+                Case "pixeldrain"
+                    RouteDesc = "将通过 Pixeldrain 进行 AES-256 流式分片加密托管（保留 120 天，好友免账号直下）。"
+                Case Else
+                    If Info.Length <= ModFriends.MaxEncryptedFileBytes Then
+                        RouteDesc = "将通过当前 ntfy 中继加密传输（公共站附件约 3 小时有效）。"
+                    Else
+                        RouteDesc = "文件大于 10 MB，将自动使用 ntfy 分片流式加密上传（公共站约 3 小时有效；如需长期保留，可在左下角「中继」配置 Pixeldrain / WebDAV / S3）。"
+                    End If
+            End Select
+            If MyMsgBox($"确定将「{Info.Name}」（{SizeLabel}）加密上传并发送给当前会话吗？{vbCrLf}{vbCrLf}{RouteDesc}", "发送加密文件", "加密发送", "取消") <> 1 Then Return
             Dim SafeName = Info.Name
+            Dim FileLen = Info.Length
             BtnSendFile.IsEnabled = False
-            Hint($"正在读取并 AES-256 加密上传「{SafeName}」…", HintType.Blue)
+            BtnSendFile.Text = LocalizationCore.TranslateText("上传中…")
+            Hint($"正在流式 AES-256 加密上传「{SafeName}」（{SizeLabel}）…", HintType.Blue)
             RunInNewThread(
                 Sub()
-                    Dim PlainBytes As Byte() = Nothing
-                    Dim Err As String = Nothing
-                    Try
-                        PlainBytes = IO.File.ReadAllBytes(FilePath)
-                        UploadAndSendFileCore(TargetId, IsGrp, SafeName, PlainBytes, Err)
-                    Catch ex As Exception
-                        Err = "读取或发送文件失败：" & ex.Message
-                    End Try
+                    Dim FileUrl As String = "", FileKey As String = "", FileSha As String = "", Provider As String = ""
+                    Dim Err As String = ModFriends.UploadEncryptedFile(
+                        FilePath, FileUrl, FileKey, FileSha, Provider,
+                        Sub(Stage, Cur, Total)
+                            RunInUi(
+                                Sub()
+                                    If Stage = "写入索引" Then
+                                        BtnSendFile.Text = LocalizationCore.TranslateText("索引中…")
+                                    ElseIf Total > 1 Then
+                                        BtnSendFile.Text = LocalizationCore.TranslateText("上传") & $" {Cur}/{Total}"
+                                    Else
+                                        BtnSendFile.Text = LocalizationCore.TranslateText("上传中…")
+                                    End If
+                                End Sub)
+                        End Sub)
+                    If Err Is Nothing Then
+                        Dim Msg As New ModFriends.FriendMessage With {
+                            .Kind = "file",
+                            .Text = $"发送了文件：{SafeName}",
+                            .FileName = SafeName,
+                            .FileSize = FileLen,
+                            .FileUrl = FileUrl,
+                            .FileKey = FileKey,
+                            .FileSha256 = FileSha
+                        }
+                        Err = ModFriends.SendRichMessage(TargetId, IsGrp, Msg)
+                    End If
                     RunInUi(
                         Sub()
                             BtnSendFile.IsEnabled = True
+                            BtnSendFile.Text = LocalizationCore.TranslateText("文件")
                             If Err IsNot Nothing Then
                                 Hint(Err, HintType.Red)
                             Else
-                                Hint($"已加密发送文件「{SafeName}」！", HintType.Green)
+                                If FileLen > ModFriends.MaxEncryptedFileBytes Then
+                                    Hint($"已加密发送大文件「{SafeName}」！可点文件卡片上的「复制取件码」方便好友随时下载。", HintType.Green)
+                                Else
+                                    Hint($"已加密发送文件「{SafeName}」！", HintType.Green)
+                                End If
                             End If
                         End Sub)
                 End Sub, "Send Encrypted Local File")
         Catch ex As Exception
             BtnSendFile.IsEnabled = True
+            BtnSendFile.Text = LocalizationCore.TranslateText("文件")
             Hint($"无法访问所选文件：{ex.Message}", HintType.Red)
         End Try
     End Sub
@@ -1308,15 +1729,197 @@
     Private Sub BtnInstSyncMenu_Click() Handles BtnInstSyncMenu.Click
         Dim Actions As New List(Of IMyRadio) From {
             New MyRadioBox With {.Text = "将当前选中实例设为「发布源」并立即推送修订版"},
-            New MyRadioBox With {.Text = "管理全部同步绑定（手动同步 / 开关启动自动同步 / 删除）"}
+            New MyRadioBox With {.Text = "管理全部同步绑定（手动同步 / 开关启动自动同步 / 删除）"},
+            New MyRadioBox With {.Text = "打包整合包环境快照发给好友（可选 mods / config / kubejs / 材质光影）"},
+            New MyRadioBox With {.Text = "发送世界存档给好友 / 群接力开房（轮值主机共享存档）"}
         }
-        Dim Picked = MyMsgBoxSelect(Actions.ToArray(), "好友实例同步（单向发布/订阅）", "下一步", "取消")
+        Dim Picked = MyMsgBoxSelect(Actions.ToArray(), "实例同步、整合包快照与存档接力", "下一步", "取消")
         If Picked Is Nothing Then Return
         If Picked.Value = 0 Then
             StartPublishInstanceSyncWizard()
-        Else
+        ElseIf Picked.Value = 1 Then
             ShowManageSyncBindingsDialog()
+        ElseIf Picked.Value = 2 Then
+            StartEnvPackSnapshotWizard()
+        Else
+            PromptAndSendWorldSaveRelay(McInstanceSelected, CurrentFriendId, CurrentIsGroup)
         End If
+    End Sub
+
+    Private Sub StartEnvPackSnapshotWizard()
+        If CurrentFriendId = "" Then
+            Hint("请先在左侧选择要发送给的好友或群聊！", HintType.Red)
+            Return
+        End If
+        Dim TargetInst = McInstanceSelected
+        If TargetInst Is Nothing Then
+            Hint("请先在启动器主界面选中一个游戏实例！", HintType.Red)
+            Return
+        End If
+
+        Dim Presets As IMyRadio() = {
+            New MyRadioBox With {.Text = "核心运行环境（mods + config + defaultconfigs + kubejs）"},
+            New MyRadioBox With {.Text = "差分精简包（同上，但自动跳过 Modrinth 在线可下载的 Mod，体积大幅减小）"},
+            New MyRadioBox With {.Text = "完整外观环境（core + resourcepacks + shaderpacks，适合直接开玩）"}
+        }
+        Dim Pick = MyMsgBoxSelect(Presets, $"选择要从「{TargetInst.Name}」打包发送的目录范围：", "开始打包并加密上传", "取消")
+        If Pick Is Nothing Then Return
+
+        Dim SelectedDirs As New List(Of String) From {"mods", "config", "defaultconfigs", "kubejs"}
+        Dim SkipModrinth = (Pick.Value = 1)
+        If Pick.Value = 2 Then
+            SelectedDirs.Add("resourcepacks")
+            SelectedDirs.Add("shaderpacks")
+        End If
+
+        Dim TargetId = CurrentFriendId, IsGrp = CurrentIsGroup
+        BtnInstSyncMenu.IsEnabled = False
+        BtnInstSyncMenu.Text = LocalizationCore.TranslateText("打包中…")
+        Hint($"正在打包实例「{TargetInst.Name}」环境快照…", HintType.Blue)
+
+        RunInNewThread(
+            Sub()
+                Dim TempZip As String = "", FileCount As Integer = 0
+                Dim ZipBytesLen As Long = 0
+                Dim Err As String = ModInstanceSync.PackInstanceEnvironmentToZip(
+                    TargetInst, SelectedDirs, SkipModrinth, TempZip, FileCount, ZipBytesLen,
+                    Sub(DoneCnt, TotCnt)
+                        RunInUi(Sub() BtnInstSyncMenu.Text = LocalizationCore.TranslateText("打包") & $" {DoneCnt}/{TotCnt}")
+                    End Sub)
+                Try
+                    If Err Is Nothing AndAlso Not String.IsNullOrEmpty(TempZip) Then
+                        Dim SizeLabel = FormatByteSizeText(ZipBytesLen)
+                        RunInUi(Sub() Hint($"打包完成（{FileCount} 个文件，{SizeLabel}），正在流式加密上传…", HintType.Blue))
+                        Dim FileUrl As String = "", FileKey As String = "", FileSha As String = "", Provider As String = ""
+                        Err = ModFriends.UploadEncryptedFile(
+                            TempZip, FileUrl, FileKey, FileSha, Provider,
+                            Sub(St, Cur, Tot)
+                                RunInUi(Sub() BtnInstSyncMenu.Text = If(Tot > 1, $"{LocalizationCore.TranslateText("上传")} {Cur}/{Tot}", LocalizationCore.TranslateText("上传中…")))
+                            End Sub)
+                        If Err Is Nothing Then
+                            Dim SafeInst = TargetInst.Name.Replace(" ", "_")
+                            For Each BadCh In IO.Path.GetInvalidFileNameChars()
+                                SafeInst = SafeInst.Replace(BadCh, "_"c)
+                            Next
+                            Dim PackFileName = $"EnvPack_{SafeInst}_{DateTime.Now:yyyyMMdd_HHmm}.zip"
+                            Dim Msg As New ModFriends.FriendMessage With {
+                                .Kind = "file",
+                                .Text = $"发送了整合包环境快照：{PackFileName}",
+                                .FileName = PackFileName,
+                                .FileSize = ZipBytesLen,
+                                .FileUrl = FileUrl,
+                                .FileKey = FileKey,
+                                .FileSha256 = FileSha
+                            }
+                            Err = ModFriends.SendRichMessage(TargetId, IsGrp, Msg)
+                        End If
+                    End If
+                Finally
+                    Try
+                        If Not String.IsNullOrEmpty(TempZip) AndAlso IO.File.Exists(TempZip) Then IO.File.Delete(TempZip)
+                    Catch
+                    End Try
+                End Try
+                RunInUi(
+                    Sub()
+                        BtnInstSyncMenu.IsEnabled = True
+                        BtnInstSyncMenu.Text = LocalizationCore.TranslateText("实例同步")
+                        If Err IsNot Nothing Then
+                            Hint(Err, HintType.Red)
+                        Else
+                            Hint("整合包环境快照已加密发送！好友可一键应用到实例或复制取件码。", HintType.Green)
+                        End If
+                    End Sub)
+            End Sub, "Pack & Upload Env Snapshot")
+    End Sub
+
+    Public Shared Sub PromptAndSendWorldSaveRelay(TargetInst As McInstance, Optional DefaultTargetId As String = "", Optional DefaultIsGroup As Boolean = False)
+        If TargetInst Is Nothing Then
+            Hint("请先在主界面选中一个包含 saves 存档的游戏实例！", HintType.Red)
+            Return
+        End If
+        Dim IndieRoot = PathUtils.RemoveExtendedPrefix(TargetInst.PathIndie).TrimEnd("\"c, "/"c)
+        Dim SavesDir = IO.Path.Combine(IndieRoot, "saves")
+        If Not IO.Directory.Exists(SavesDir) Then
+            Hint($"实例「{TargetInst.Name}」的 saves 目录不存在！", HintType.Red)
+            Return
+        End If
+        Dim Worlds = New IO.DirectoryInfo(SavesDir).GetDirectories() _
+            .Where(Function(d) IO.File.Exists(IO.Path.Combine(d.FullName, "level.dat"))) _
+            .OrderByDescending(Function(d) d.LastWriteTimeUtc).ToList()
+        If Not Worlds.Any() Then
+            Hint("当前实例 saves 目录中没有包含 level.dat 的世界存档！", HintType.Red)
+            Return
+        End If
+        Dim WorldRadios = Worlds.Select(Function(w) CType(New MyRadioBox With {.Text = $"{w.Name}（更新于 {w.LastWriteTime:MM-dd HH:mm}）"}, IMyRadio)).ToArray()
+        Dim WIdx = MyMsgBoxSelect(WorldRadios, $"选择要上传接力的世界存档（实例：{TargetInst.Name}）：", "下一步", "取消")
+        If WIdx Is Nothing Then Return
+        Dim ChosenWorld = Worlds(WIdx.Value)
+
+        Dim SendTargetId = If(DefaultTargetId, "").Trim()
+        Dim SendIsGrp = DefaultIsGroup
+        Dim SendLabel = SendTargetId
+        If String.IsNullOrEmpty(SendTargetId) Then
+            Dim D = ModFriends.GetData()
+            Dim Targets As New List(Of (Id As String, IsGrp As Boolean, Label As String))
+            For Each G In D.Groups
+                Targets.Add((G.Id, True, $"[群聊] {G.DisplayName}"))
+            Next
+            For Each F In D.Friends
+                Targets.Add((F.Id, False, $"[好友] {F.DisplayName}"))
+            Next
+            If Not Targets.Any() Then
+                Hint("请先在「好友」页至少添加一位好友或加入一个群聊！", HintType.Red)
+                Return
+            End If
+            Dim TRadios = Targets.Select(Function(t) CType(New MyRadioBox With {.Text = t.Label}, IMyRadio)).ToArray()
+            Dim TIdx = MyMsgBoxSelect(TRadios, $"选择要接收接力存档「{ChosenWorld.Name}」的群聊或好友：", "打包加密并发送", "取消")
+            If TIdx Is Nothing Then Return
+            SendTargetId = Targets(TIdx.Value).Id
+            SendIsGrp = Targets(TIdx.Value).IsGrp
+            SendLabel = Targets(TIdx.Value).Label
+        Else
+            SendLabel = If(SendIsGrp, If(ModFriends.FindGroup(SendTargetId)?.DisplayName, SendTargetId), If(ModFriends.FindFriend(SendTargetId)?.DisplayName, SendTargetId))
+        End If
+
+        Hint($"正在打包并流式加密上传存档「{ChosenWorld.Name}」（自动跳过 session.lock）…", HintType.Blue)
+        RunInNewThread(
+            Sub()
+                Dim TempZip As String = "", SizeBytes As Long = 0, ZipSha As String = ""
+                Dim Err = ModInstanceSync.PackWorldSaveToTempZip(ChosenWorld.FullName, TempZip, SizeBytes, ZipSha)
+                Try
+                    If Err Is Nothing AndAlso Not String.IsNullOrEmpty(TempZip) Then
+                        Dim FileUrl As String = "", FileKey As String = "", FileSha As String = "", Provider As String = ""
+                        Err = ModFriends.UploadEncryptedFile(TempZip, FileUrl, FileKey, FileSha, Provider)
+                        If Err Is Nothing Then
+                            Dim Msg As New ModFriends.FriendMessage With {
+                                .Kind = "save_relay",
+                                .Text = $"发送了接力存档：{ChosenWorld.Name}",
+                                .WorldName = ChosenWorld.Name,
+                                .FileName = ChosenWorld.Name & ".zip",
+                                .FileSize = SizeBytes,
+                                .FileUrl = FileUrl,
+                                .FileKey = FileKey,
+                                .FileSha256 = FileSha
+                            }
+                            Err = ModFriends.SendRichMessage(SendTargetId, SendIsGrp, Msg)
+                        End If
+                    End If
+                Finally
+                    Try
+                        If Not String.IsNullOrEmpty(TempZip) AndAlso IO.File.Exists(TempZip) Then IO.File.Delete(TempZip)
+                    Catch
+                    End Try
+                End Try
+                RunInUi(
+                    Sub()
+                        If Err IsNot Nothing Then
+                            Hint("发送接力存档失败：" & Err, HintType.Red)
+                        Else
+                            Hint($"已将接力存档「{ChosenWorld.Name}」加密发送给 {SendLabel}！", HintType.Green)
+                        End If
+                    End Sub)
+            End Sub, "Send Rotating Save Relay")
     End Sub
 
     Private Sub StartPublishInstanceSyncWizard()
@@ -2224,17 +2827,211 @@
     End Sub
 
     Private Sub BtnRelay_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnRelay.Click
-        Dim Input As String = MyMsgBoxInput("消息中继设置",
-            $"默认使用公共中继 ntfy.sh（密文传输，服务端缓存 12 小时）。{vbCrLf}如网络受限，可填入自建 ntfy 服务地址。{vbCrLf}{vbCrLf}当前：{ModFriends.RelayUrl()}",
-            DefaultInput:=ModFriends.RelayUrl(), HintText:="https://…")
-        If Input Is Nothing Then Return
-        Try
-            ModFriends.SetRelayUrl(Input)
-            RefreshCard()
-            Hint("中继地址已保存，下一轮拉取生效。", HintType.Green)
-        Catch ex As Exception
-            Hint(ex.Message, HintType.Red)
-        End Try
+        Dim EffProvider = ModFriends.ResolveEffectiveFileStorageProvider()
+        Dim ModeLabel = ModFriends.GetFileStorageMode()
+        Dim PdOk = ModFriends.HasPixeldrainApiKey()
+        Dim DavCfg = ModFriends.GetWebDavConfig()
+        Dim S3Cfg = ModFriends.GetS3Config()
+
+        Dim MenuItems As IMyRadio() = {
+            New MyRadioBox With {.Text = $"消息中继地址 (ntfy)：{ModFriends.RelayUrl()}"},
+            New MyRadioBox With {.Text = $"切换默认大文件托管后端（模式: {ModeLabel} -> 实际: {EffProvider}）"},
+            New MyRadioBox With {.Text = $"配置 Pixeldrain API Key（{If(PdOk, "已配置 · 120天托管", "未配置")}）"},
+            New MyRadioBox With {.Text = $"配置 WebDAV / Alist 存储（{If(DavCfg IsNot Nothing, "已配置 · 支持永久直链", "未配置")}）"},
+            New MyRadioBox With {.Text = $"配置 S3 兼容存储 R2 / OSS / MinIO（{If(S3Cfg IsNot Nothing, "已配置 · 预签名直下", "未配置")}）"},
+            New MyRadioBox With {.Text = "大文件传输记录 / 断点续传缓存清理与总线审计"}
+        }
+        Dim Picked = MyMsgBoxSelect(MenuItems, "中继、大文件存储与传输管理", "确定", "关闭")
+        If Picked Is Nothing Then Return
+
+        Select Case Picked.Value
+            Case 0
+                Dim Input As String = MyMsgBoxInput("消息中继设置",
+                    $"默认使用公共中继 ntfy.sh（密文传输，服务端缓存 12 小时）。{vbCrLf}如网络受限，可填入自建 ntfy 服务地址。{vbCrLf}{vbCrLf}当前：{ModFriends.RelayUrl()}",
+                    DefaultInput:=ModFriends.RelayUrl(), HintText:="https://…")
+                If Input Is Nothing Then Return
+                Try
+                    ModFriends.SetRelayUrl(Input)
+                    RefreshCard()
+                    Hint("中继地址已保存，下一轮拉取生效。", HintType.Green)
+                Catch ex As Exception
+                    Hint(ex.Message, HintType.Red)
+                End Try
+            Case 1
+                Dim Backends As String() = {"auto", "pixeldrain", "webdav", "s3", "ntfy"}
+                Dim BLabels As IMyRadio() = {
+                    New MyRadioBox With {.Text = "auto（自动优先：Pixeldrain -> S3 -> WebDAV -> ntfy）"},
+                    New MyRadioBox With {.Text = "pixeldrain（强制使用 Pixeldrain 120 天托管）"},
+                    New MyRadioBox With {.Text = "webdav（强制使用 WebDAV / Alist 存储）"},
+                    New MyRadioBox With {.Text = "s3（强制使用 S3 / Cloudflare R2 / OSS 预签名）"},
+                    New MyRadioBox With {.Text = "ntfy（仅使用当前消息中继分片，约 3 小时）"}
+                }
+                Dim BIdx = MyMsgBoxSelect(BLabels, "选择发送大文件时的默认后端：", "保存选择", "取消")
+                If BIdx Is Nothing Then Return
+                ModFriends.SetFileStorageMode(Backends(BIdx.Value))
+                RefreshCard()
+                Hint($"已将默认大文件存储切换为：{Backends(BIdx.Value)}", HintType.Green)
+            Case 2
+                ConfigurePixeldrainDialog()
+            Case 3
+                ConfigureWebDavDialog()
+            Case 4
+                ConfigureS3Dialog()
+            Case 5
+                ShowTransferAndAuditDialog()
+        End Select
+    End Sub
+
+    Private Sub ConfigurePixeldrainDialog()
+        Dim ExistingKey = ModFriends.GetPixeldrainApiKey()
+        Dim MaskedHint = If(String.IsNullOrEmpty(ExistingKey), "未配置", $"已配置（尾号 {ExistingKey.Substring(Math.Max(0, ExistingKey.Length - 4))}）")
+        Dim KeyInput = MyMsgBoxInput("Pixeldrain 大文件托管设置",
+            $"配置免费 Pixeldrain API Key 后，发送大文件将自动流式加密分片上传（64 MB/片，理论不限大小，云端保留 120 天），好友下载无需账号或 Key。{vbCrLf}免费获取地址：https://pixeldrain.com/user/api_keys{vbCrLf}{vbCrLf}当前状态：{MaskedHint}（留空确定可清除配置，本机通过 Windows DPAPI 加密存放）",
+            DefaultInput:=ExistingKey, HintText:="输入 Pixeldrain API Key，留空清除")
+        If KeyInput Is Nothing Then Return
+        ModFriends.SetPixeldrainApiKey(KeyInput)
+        RefreshCard()
+        If String.IsNullOrWhiteSpace(KeyInput) Then
+            Hint("已清除 Pixeldrain API Key。", HintType.Blue)
+        Else
+            Hint("Pixeldrain API Key 已通过 DPAPI 加密保存！", HintType.Green)
+        End If
+    End Sub
+
+    Private Sub ConfigureWebDavDialog()
+        Dim Existing = If(ModFriends.GetWebDavConfig(), New CloudStorageCore.WebDavStorageConfig())
+        If Not String.IsNullOrEmpty(Existing.EndpointUrl) Then
+            Dim Act = MyMsgBox($"当前 WebDAV 地址：{Existing.EndpointUrl}{vbCrLf}公开直链前缀：{If(String.IsNullOrWhiteSpace(Existing.PublicBaseUrl), "未设置", Existing.PublicBaseUrl)}",
+                               "WebDAV / Alist 配置", "重新填写配置", "清除现有配置", "取消")
+            If Act = 2 Then
+                ModFriends.SetWebDavConfig(Nothing)
+                RefreshCard()
+                Hint("已清除 WebDAV 配置。", HintType.Blue)
+                Return
+            ElseIf Act <> 1 Then
+                Return
+            End If
+        End If
+        Dim Ep = MyMsgBoxInput("WebDAV 第 1/4 步：服务端写目录 URL", "输入 WebDAV 目录（例如 https://alist.example.com/dav/pcllk/）：", Existing.EndpointUrl, HintText:="https://…/dav/pcllk/")
+        If String.IsNullOrWhiteSpace(Ep) Then Return
+        Dim User = MyMsgBoxInput("WebDAV 第 2/4 步：用户名", "输入 WebDAV 登录用户名（无认证可留空）：", Existing.Username)
+        If User Is Nothing Then Return
+        Dim Pwd = MyMsgBoxInput("WebDAV 第 3/4 步：密码 / 应用专用密码", "输入 WebDAV 密码（将通过 Windows DPAPI 本机加密存放，不会发给好友）：", Existing.Password)
+        If Pwd Is Nothing Then Return
+        Dim Pub = MyMsgBoxInput("WebDAV 第 4/4 步：好友下载公开直链前缀（强烈建议填写）",
+                                $"例如 Alist 直链前缀 https://alist.example.com/d/pcllk/{vbCrLf}填写后好友下载完全无需你的 WebDAV 账号密码！", Existing.PublicBaseUrl, HintText:="https://…/d/pcllk/")
+        If Pub Is Nothing Then Return
+
+        Dim Cfg As New CloudStorageCore.WebDavStorageConfig With {
+            .EndpointUrl = Ep.Trim(),
+            .Username = User.Trim(),
+            .Password = Pwd,
+            .PublicBaseUrl = Pub.Trim()
+        }
+        Dim ValidErr As String = Nothing
+        If Not CloudStorageCore.ValidateWebDavConfig(Cfg, ValidErr) Then
+            Hint(ValidErr, HintType.Red)
+            Return
+        End If
+        ModFriends.SetWebDavConfig(Cfg)
+        If ModFriends.GetFileStorageMode() = "auto" Then ModFriends.SetFileStorageMode("webdav")
+        RefreshCard()
+        Hint("WebDAV 配置已通过 DPAPI 加密保存并设为当前存储后端！", HintType.Green)
+    End Sub
+
+    Private Sub ConfigureS3Dialog()
+        Dim Existing = If(ModFriends.GetS3Config(), New CloudStorageCore.S3StorageConfig())
+        If Not String.IsNullOrEmpty(Existing.EndpointUrl) Then
+            Dim Act = MyMsgBox($"当前 S3 Endpoint：{Existing.EndpointUrl}{vbCrLf}Bucket：{Existing.Bucket} · Region：{Existing.Region}",
+                               "S3 兼容存储配置", "重新填写配置", "清除现有配置", "取消")
+            If Act = 2 Then
+                ModFriends.SetS3Config(Nothing)
+                RefreshCard()
+                Hint("已清除 S3 存储配置。", HintType.Blue)
+                Return
+            ElseIf Act <> 1 Then
+                Return
+            End If
+        End If
+        Dim Ep = MyMsgBoxInput("S3 第 1/6 步：Endpoint URL", "输入 Cloudflare R2 / MinIO / 阿里云 OSS Endpoint（如 https://<accountid>.r2.cloudflarestorage.com）：", Existing.EndpointUrl, HintText:="https://…")
+        If String.IsNullOrWhiteSpace(Ep) Then Return
+        Dim Bucket = MyMsgBoxInput("S3 第 2/6 步：Bucket 存储桶名称", "输入目标 Bucket 名称：", Existing.Bucket)
+        If String.IsNullOrWhiteSpace(Bucket) Then Return
+        Dim Region = MyMsgBoxInput("S3 第 3/6 步：Region 区域", "Cloudflare R2 填 auto，阿里云/AWS 填对应区域（如 cn-hangzhou 或 us-east-1）：", If(String.IsNullOrWhiteSpace(Existing.Region), "auto", Existing.Region))
+        If Region Is Nothing Then Return
+        Dim Ak = MyMsgBoxInput("S3 第 4/6 步：AccessKey ID", "输入具有 PutObject/GetObject 权限的 AccessKey ID（DPAPI 本机加密）：", Existing.AccessKeyId)
+        If String.IsNullOrWhiteSpace(Ak) Then Return
+        Dim Sk = MyMsgBoxInput("S3 第 5/6 步：SecretAccessKey", "输入 SecretAccessKey（仅用于本机签名，不会发送给好友）：", Existing.SecretAccessKey)
+        If String.IsNullOrWhiteSpace(Sk) Then Return
+        Dim StyleChoice = MyMsgBox("第 6/6 步：请选择 URL 访问风格与预签名有效时长（最大 7 天）：", "S3 访问风格", "Path-Style（R2 / MinIO 推荐）", "Virtual-Host（OSS / AWS）", "取消")
+        If StyleChoice = 0 OrElse StyleChoice = 3 Then Return
+
+        Dim Cfg As New CloudStorageCore.S3StorageConfig With {
+            .EndpointUrl = Ep.Trim(),
+            .Bucket = Bucket.Trim(),
+            .Region = If(String.IsNullOrWhiteSpace(Region), "auto", Region.Trim()),
+            .AccessKeyId = Ak.Trim(),
+            .SecretAccessKey = Sk.Trim(),
+            .KeyPrefix = "pcllk/",
+            .UsePathStyle = (StyleChoice = 1),
+            .PresignDays = 7
+        }
+        Dim ValidErr As String = Nothing
+        If Not CloudStorageCore.ValidateS3Config(Cfg, ValidErr) Then
+            Hint(ValidErr, HintType.Red)
+            Return
+        End If
+        ModFriends.SetS3Config(Cfg)
+        If ModFriends.GetFileStorageMode() = "auto" Then ModFriends.SetFileStorageMode("s3")
+        RefreshCard()
+        Hint("S3 兼容存储配置已通过 DPAPI 加密保存（上传后将自动生成 7 天预签名下载直链）！", HintType.Green)
+    End Sub
+
+    Private Sub ShowTransferAndAuditDialog()
+        Dim Sb As New Text.StringBuilder()
+        Dim Transfers = ModFriends.GetTransferHistorySnapshot()
+        Sb.AppendLine("【最近大文件传输任务（支持同路径断点续传）】")
+        If Not Transfers.Any() Then
+            Sb.AppendLine("• 本次运行暂无大文件传输记录。")
+        Else
+            For Each T In Transfers.Take(8)
+                Dim Tag = If(T.Direction = "upload", "上传", "下载")
+                Dim ErrInfo = If(String.IsNullOrWhiteSpace(T.ErrorText), "", $" ({T.ErrorText})")
+                Sb.AppendLine($"• [{Tag}] {T.FileName} · {T.StatusText} ({T.CurrentChunk}/{T.TotalChunks}){ErrInfo}")
+            Next
+        End If
+        Sb.AppendLine()
+        Sb.AppendLine("【事件总线近期安全与状态审计（AppEventBus）】")
+        Dim Audits = AppEventBus.GetRecentAuditEvents(10)
+        If Not Audits.Any() Then
+            Sb.AppendLine("• 暂无审计事件。")
+        Else
+            For Each A In Audits
+                Sb.AppendLine($"• [{A.TimestampUtc.ToLocalTime():HH:mm:ss}] {A.Topic} <- {A.SourceModule}")
+            Next
+        End If
+
+        Dim Choice = MyMsgBox(Sb.ToString().TrimEnd(), "大文件传输队列与事件总线审计", "清理缓存中的半截续传文件", "复制诊断记录", "关闭")
+        If Choice = 1 Then
+            Dim Cleaned As Integer = 0
+            Try
+                Dim CacheDir = IO.Path.Combine(PathUtils.RemoveExtendedPrefix(PathTemp), "Cache")
+                If IO.Directory.Exists(CacheDir) Then
+                    For Each F In IO.Directory.GetFiles(CacheDir, "*.pcllk.*")
+                        Try
+                            IO.File.Delete(F)
+                            Cleaned += 1
+                        Catch
+                        End Try
+                    Next
+                End If
+            Catch
+            End Try
+            Hint($"已清理 {Cleaned} 个内部暂存续传文件（若存在桌面或另存为目录的 .pcllk.part 可重新下载或删除）。", HintType.Green)
+        ElseIf Choice = 2 Then
+            ClipboardSet(SecurityGuard.RedactUserPathAndSecrets(Sb.ToString().TrimEnd()), False)
+            Hint("已复制脱敏后的传输与审计记录！", HintType.Green)
+        End If
     End Sub
 
 #End Region

@@ -341,7 +341,7 @@
                 </StackPanel>
             </local:MyCard>
             <TextBlock HorizontalAlignment="Center" Margin="0,-5,0,16" FontSize="12" Opacity="0.5"
-                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.3 · 基于 PCL 2.14.0.0 开源版二次开发" />
+                       Foreground="{DynamicResource ColorBrush1}" Text="PCL Linking修改版 v 1.1.4 · 基于 PCL 2.14.0.0 开源版二次开发" />
 
         </StackPanel>
     </local:MyScrollViewer>

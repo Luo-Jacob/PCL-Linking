@@ -425,6 +425,14 @@ Public Module ModWatcher
 
             FlushPlaytimeOnce()
 
+            AppEventBus.Publish(
+                If(EndState = MinecraftState.Crashed, "game.crashed", "game.session.ended"),
+                "ModWatcher",
+                New Newtonsoft.Json.Linq.JObject From {
+                    {"instance", TargetInst.Name},
+                    {"state", EndState.ToString()}
+                })
+
             Try
                 If EndState = MinecraftState.Ended AndAlso Settings.Get(Of Boolean)("VersionAdvanceAutoBackupOnExit", Instance:=TargetInst) Then
                     Dim StartUtcSnapshot = SessionStartUtc
@@ -451,6 +459,22 @@ Public Module ModWatcher
                         BackupAction()
                     Else
                         RunInNewThread(BackupAction, "ExitAutoBackup")
+                    End If
+                End If
+                If EndState = MinecraftState.Ended AndAlso
+                   Settings.Get(Of Integer)("LaunchArgumentVisible") <> 2 AndAlso
+                   PageLinkMain.ConsumeRecentHostActivity() AndAlso
+                   HasSavesChangedSinceStart(TargetInst, SessionStartUtc) Then
+                    Dim FriendDataSnap = ModFriends.GetData()
+                    If FriendDataSnap.Friends.Any() OrElse FriendDataSnap.Groups.Any() Then
+                        Dim InstForRelay = TargetInst
+                        RunInUi(
+                            Sub()
+                                If MyMsgBox($"检测到本次联机后实例「{InstForRelay.Name}」的存档有更新。{vbCrLf}是否立即选择变动存档加密上传给好友/群聊（轮值主机接力），方便队友下次随时接手开房？",
+                                            "联机存档接力提示", "打包上传接力", "暂不上传") = 1 Then
+                                    PageFriends.PromptAndSendWorldSaveRelay(InstForRelay)
+                                End If
+                            End Sub)
                     End If
                 End If
             Catch ex As Exception

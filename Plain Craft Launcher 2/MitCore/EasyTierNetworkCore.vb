@@ -30,8 +30,12 @@ Public Module EasyTierNetworkCore
         If Arch Is Nothing Then Arch = Environment.GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
         Dim ArchName = If(Arch IsNot Nothing AndAlso Arch.IndexOf("ARM", StringComparison.OrdinalIgnoreCase) >= 0, "arm64", "x86_64")
         Dim FileName = $"easytier-windows-{ArchName}-v{LinkDownloadVersion}.zip"
+        Dim OfficialUrl = $"https://github.com/EasyTier/EasyTier/releases/download/v{LinkDownloadVersion}/{FileName}"
+        '国内镜像优先 + GitHub 官方源兜底；下载完成后 EnsureModuleFiles 会强制校验官方 SHA-256 摘要
         Return New List(Of String) From {
-            $"https://github.com/EasyTier/EasyTier/releases/download/v{LinkDownloadVersion}/{FileName}"
+            $"https://gh-proxy.com/{OfficialUrl}",
+            $"https://ghfast.top/{OfficialUrl}",
+            OfficialUrl
         }
     End Function
 
@@ -258,6 +262,77 @@ Public Module EasyTierNetworkCore
         End Try
 
         Return Found.Values.OrderBy(Function(w) w.Port).ToList()
+    End Function
+
+    Public Function IsSafeExecutablePathForFirewall(ExePath As String) As Boolean
+        If String.IsNullOrWhiteSpace(ExePath) Then Return False
+        Dim Clean = ExePath.Trim()
+        If Clean.Any(Function(c) Char.IsControl(c) OrElse c = """"c OrElse c = "&"c OrElse c = "|"c OrElse c = ";"c OrElse c = "<"c OrElse c = ">"c) Then
+            Return False
+        End If
+        If Not Path.IsPathRooted(Clean) Then Return False
+        Dim Ext = Path.GetExtension(Clean).ToLowerInvariant()
+        Return Ext = ".exe"
+    End Function
+
+    Public Function BuildFirewallAddRuleArgs(RuleName As String, ExePath As String) As String
+        Dim SafeName = Regex.Replace(If(RuleName, "PCL Linking Rule").Trim(), "[^A-Za-z0-9 _.-]", "")
+        If String.IsNullOrWhiteSpace(SafeName) Then SafeName = "PCL Linking Rule"
+        If Not IsSafeExecutablePathForFirewall(ExePath) Then Throw New ArgumentException("可执行文件路径不安全或无效", NameOf(ExePath))
+        Return $"advfirewall firewall add rule name=""{SafeName}"" dir=in action=allow program=""{ExePath.Trim()}"" enable=yes profile=any"
+    End Function
+
+    Public Function QueryFirewallRuleExists(RuleName As String) As Boolean?
+        Try
+            Dim SafeName = Regex.Replace(If(RuleName, "").Trim(), "[^A-Za-z0-9 _.-]", "")
+            If String.IsNullOrWhiteSpace(SafeName) Then Return Nothing
+            Dim Psi As New ProcessStartInfo("netsh", $"advfirewall firewall show rule name=""{SafeName}""") With {
+                .UseShellExecute = False,
+                .CreateNoWindow = True,
+                .RedirectStandardOutput = True,
+                .RedirectStandardError = True
+            }
+            Using Proc = Process.Start(Psi)
+                Dim OutTxt = Proc.StandardOutput.ReadToEnd()
+                Proc.WaitForExit(3000)
+                Return Proc.ExitCode = 0 AndAlso Not String.IsNullOrWhiteSpace(OutTxt) AndAlso OutTxt.IndexOf(SafeName, StringComparison.OrdinalIgnoreCase) >= 0
+            End Using
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    Public Function ApplyFirewallRuleElevated(RuleName As String, ExePath As String, ByRef OutErr As String) As Boolean
+        OutErr = Nothing
+        Try
+            Dim Args = BuildFirewallAddRuleArgs(RuleName, ExePath)
+            Dim Psi As New ProcessStartInfo("netsh", Args) With {
+                .UseShellExecute = True,
+                .Verb = "runas",
+                .WindowStyle = ProcessWindowStyle.Hidden
+            }
+            Using Proc = Process.Start(Psi)
+                If Proc Is Nothing Then
+                    OutErr = "未能启动 netsh 提权进程。"
+                    Return False
+                End If
+                If Not Proc.WaitForExit(15000) Then
+                    OutErr = "添加防火墙规则超时。"
+                    Return False
+                End If
+                If Proc.ExitCode <> 0 Then
+                    OutErr = $"netsh 返回退出码 {Proc.ExitCode}。"
+                    Return False
+                End If
+                Return True
+            End Using
+        Catch w32 As ComponentModel.Win32Exception When w32.NativeErrorCode = 1223
+            OutErr = "用户取消了管理员 UAC 授权。"
+            Return False
+        Catch ex As Exception
+            OutErr = ex.Message
+            Return False
+        End Try
     End Function
 
 End Module

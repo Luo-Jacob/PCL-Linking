@@ -380,4 +380,80 @@ Public Class PageToolsToolbox
 
 #End Region
 
+#Region "崩溃与日志智能分析"
+
+    Private Sub ShowCrashAnalysisDialog(InstSnap As McInstance, DiagnosisText As String, SummaryText As String, SourceDesc As String)
+        LabCrashStatus.Text = $"已完成分析（{SourceDesc}）。"
+        Dim DisplayText = $"{DiagnosisText}{vbCrLf}{vbCrLf}--- 群报障精简摘要预览（已脱敏） ---{vbCrLf}{SummaryText}"
+        Dim Choice = MyMsgBox(DisplayText, $"Minecraft 崩溃与日志分析 · {SourceDesc}", "复制群报障精简摘要", "复制完整分析结论", "关闭")
+        If Choice = 1 Then
+            ClipboardSet(SummaryText, False)
+            Hint("已复制脱敏后的群报障精简摘要，可直接发群/好友求助！", HintType.Green)
+        ElseIf Choice = 2 Then
+            ClipboardSet(SecurityGuard.RedactUserPathAndSecrets(DiagnosisText), False)
+            Hint("已复制完整分析结论！", HintType.Green)
+        End If
+    End Sub
+
+    Private Sub BtnCrashAnalyzeInstance_Click() Handles BtnCrashAnalyzeInstance.Click
+        Dim InstSnap = McInstanceSelected
+        If InstSnap Is Nothing Then
+            Hint("请先在左侧/主界面选中一个游戏实例！", HintType.Red)
+            Return
+        End If
+        BtnCrashAnalyzeInstance.IsEnabled = False
+        LabCrashStatus.Text = $"正在扫描实例「{InstSnap.Name}」的 crash-reports、hs_err 与 latest.log…"
+        RunInNewThread(
+        Sub()
+            Try
+                Dim MatchedFiles As New List(Of String)
+                Dim Analyzer As New CrashAnalyzer(InstSnap)
+                Dim Diag = Analyzer.AnalyzeInstanceOfflineOrRecent(MatchedFiles)
+                Dim Suspicious = Analyzer.LastSuspiciousLines
+                Dim Summary = CrashAnalyzer.BuildRedactedBugSummary(InstSnap, Diag, Suspicious)
+                Dim SourceLabel = If(MatchedFiles.Any(), String.Join("、", MatchedFiles.Take(3)), InstSnap.Name)
+                RunInUi(Sub() ShowCrashAnalysisDialog(InstSnap, Diag, Summary, SourceLabel))
+            Catch ex As Exception
+                RunInUi(
+                Sub()
+                    LabCrashStatus.Text = $"分析失败：{ex.Message}"
+                    Hint($"分析实例日志失败：{ex.Message}", HintType.Red)
+                End Sub)
+            Finally
+                RunInUi(Sub() BtnCrashAnalyzeInstance.IsEnabled = True)
+            End Try
+        End Sub, "Analyze Instance Crash Logs")
+    End Sub
+
+    Private Sub BtnCrashImportFile_Click() Handles BtnCrashImportFile.Click
+        Dim Dlg As New Microsoft.Win32.OpenFileDialog With {
+            .Title = "选择崩溃报告、日志文件或日志压缩包",
+            .Filter = "崩溃与日志文件 (*.txt;*.log;*.zip)|*.txt;*.log;*.zip|所有文件 (*.*)|*.*"
+        }
+        If Dlg.ShowDialog() <> True Then Return
+        Dim TargetPath = Dlg.FileName
+        Dim InstSnap = McInstanceSelected
+        BtnCrashImportFile.IsEnabled = False
+        LabCrashStatus.Text = $"正在解析「{Path.GetFileName(TargetPath)}」…"
+        RunInNewThread(
+        Sub()
+            Try
+                Dim Analyzer As New CrashAnalyzer(InstSnap)
+                Dim Diag = Analyzer.AnalyzeImportedFile(TargetPath)
+                Dim Summary = CrashAnalyzer.BuildRedactedBugSummary(InstSnap, Diag, Analyzer.LastSuspiciousLines)
+                RunInUi(Sub() ShowCrashAnalysisDialog(InstSnap, Diag, Summary, Path.GetFileName(TargetPath)))
+            Catch ex As Exception
+                RunInUi(
+                Sub()
+                    LabCrashStatus.Text = $"导入分析失败：{ex.Message}"
+                    Hint($"导入分析失败：{ex.Message}", HintType.Red)
+                End Sub)
+            Finally
+                RunInUi(Sub() BtnCrashImportFile.IsEnabled = True)
+            End Try
+        End Sub, "Analyze Imported Crash Report")
+    End Sub
+
+#End Region
+
 End Class

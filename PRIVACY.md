@@ -1,6 +1,6 @@
 # 隐私政策与本地数据处理说明（PCL Linking 修改版）
 
-最后更新日期：2026-11-22（对应版本 `v 1.1.3`）
+最后更新日期：2026-11-28（对应版本 `v 1.1.4`）
 
 **PCL Linking**（**Plain Craft Launcher - PCL Linking 修改版**，开源仓库：<https://github.com/Luo-Jacob/PCL-Linking>）为本地优先（Local-First）的桌面应用程序，**不包含任何内置遥测（Telemetry）、统计上报或广告 SDK**。仅在您主动使用对应联网功能时，才会与相关第三方或开源公共服务通信。
 
@@ -11,9 +11,9 @@
 所有配置、缓存与聊天记录均保存在程序同级 `PCL Linking\` 便携目录中（或游戏实例目录下的 `PCL Linking\` 子目录），不会向 Windows 系统无关目录上传您的配置：
 
 - **常规配置与游玩统计**：`PCL Linking\Setup.ini`、`PCL Linking\Global.ini`、`PCL Linking\Hotkeys.json`、`PCL Linking\Playtime.json`、`PCL Linking\SceneProfiles.json` 等文件以本地文本 / JSON 形式保存。
-- **敏感设置保护（Windows DPAPI）**：`ToolCurseForgeApiKey`、`ToolMsOAuthClientId`、`CacheMsV2*`（微软令牌与档案缓存）、`LoginMsJson`、`LoginAuthPass`、`CacheAuthAccess`、联机房间粘性密钥等敏感项优先通过 Windows 数据保护 API（`ProtectedData.Protect`，`DataProtectionScope.CurrentUser`）绑定当前 Windows 用户加密存储（前缀 `dpapi:`）。
+- **敏感设置保护（Windows DPAPI）**：`ToolCurseForgeApiKey`、`ToolMsOAuthClientId`、`CacheMsV2*`（微软令牌与档案缓存）、`LoginMsJson`、`LoginAuthPass`、`CacheAuthAccess`、联机房间粘性密钥，以及 `friends.json` 中可选配置的大文件托管凭据（Pixeldrain API Key、WebDAV 密码与 S3 AccessKey/SecretKey）均通过 Windows 数据保护 API（`ProtectedData.Protect`，`DataProtectionScope.CurrentUser`）绑定当前 Windows 用户加密存储（前缀 `dpapi:`）。
   - > 注意：由于配置默认存于程序同级 `PCL Linking\` 目录，若您将整个 `PCL Linking\` 目录分享给他人，仍请先清理个人设置、日志与聊天记录文件。
-- **诊断日志**：运行日志（`PCL Linking\Log1.txt` ~ `Log5.txt`）仅保存在本地用于排查问题，程序不会自动上传。提交 GitHub Issue 前请自行检查并遮盖个人用户名或敏感地址。
+- **诊断日志与崩溃摘要脱敏**：运行日志（`PCL Linking\Log1.txt` ~ `Log5.txt`）及百宝箱「崩溃与日志智能分析」仅在本地执行；生成群报障摘要、联机诊断报告与事件总线审计日志时会自动将本机 Windows 用户目录脱敏为 `%USERPROFILE%` 并掩码密钥字段，程序不会自动上传。提交 GitHub Issue 前仍建议人工复查。
 
 ---
 
@@ -23,9 +23,11 @@
   - 私聊与群聊仅存储于本地 `PCL Linking\friends.json`，默认每 30 秒通过公开或用户自定义的中继服务器（默认 `https://ntfy.sh`）轮询密文消息。
   - 消息正文使用 **AES-256-CBC + HMAC-SHA256** 进行客户端侧加密与完整性校验（采用域分离推导密钥与主题 ID `lml-v2-` / `lml-grp-v2-`），中继服务器无法读取明文。
   - **可被中继服务器观测的元数据**：您的出口 IP 地址、访问时间戳以及派生后的不可逆主题 ID。
-- **加密文件与截图附件（<= 10 MB）**：
-  - 仅在您点击发送、拖入聊天框或粘贴图片并确认后，文件才会在本地加密再上传至所配置的 `ntfy` 中继服务器。
-  - 中继默认短暂缓存（通常约 3 小时）加密附件，接收端下载时限定同一中继源并强制校对 SHA-256 摘要，不会自动访问第三方外部链接。
+- **加密大文件传输、整合包环境快照、接力存档与离线取件码（支持 > 10 MB 流式分片与断点续传）**：
+  - 仅在您点击发送、拖入聊天框、粘贴图片或确认打包发送环境快照/接力存档后，文件才会在本地流式 **AES-256-CBC** 分片加密并计算整包与分片 **SHA-256** 摘要后再上传；云端仅看到加密密文。
+  - **默认途径（`ntfy` 中继）**：10 MB 以内作为单包上传；超过 10 MB 时按 8 MB 自动分片并加密上传分片索引（公共 `ntfy.sh` 附件约保留 3 小时）。
+  - **可选长期/自定义托管（Pixeldrain / WebDAV / S3 兼容存储）**：仅当您在「中继」主动填入对应凭据后生效——Pixeldrain 按 64 MB 流式托管（保留约 120 天）；WebDAV 支持配置公开直链前缀（如 Alist）；S3 兼容存储（Cloudflare R2 / MinIO / 阿里云 OSS）仅在本机用 AWS SigV4 签名上传并生成只读预签名链接，绝不向好友下发您的存储密钥。
+  - **离线加密取件码（`PCLLK-FILE-V1:`）与 SSRF 防护**：用于好友超过 `ntfy` 12 小时消息缓存仍可凭取件码拉取密文；下载端强制禁用重定向、校验 DNS/公网安全 HTTPS 白名单（拦截私网/回环/元数据 IP）并在分片与整包 SHA-256 全部校验通过后才落盘。
 - **好友实例同步（`PCL Linking\InstanceSync.json`）**：
   - 推送端仅在您手动配置发布源并确认后发送 Mod 列表摘要与可选加密 `config/`（上限 8 MB）。
   - 订阅端仅按本地绑定配置下载来自同源中继的加密配置并从 Modrinth 拉取公开 Mod 元数据与文件；覆盖本地 `config/` 前会自动在实例 `PCL Linking\ConfigSyncBackups\` 下滚动保留最近 3 份备份。

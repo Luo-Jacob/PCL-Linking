@@ -166,6 +166,8 @@ Public Class PageLinkMain
         '加载器与进程状态
         SideChannelSessionId += 1
         If LabFinishSideChannelStatus IsNot Nothing Then LabFinishSideChannelStatus.Visibility = Visibility.Collapsed
+        AppEventBus.Publish("link.session.changed", "PageLinkMain",
+            New Newtonsoft.Json.Linq.JObject From {{"state", "waiting"}, {"from", OldState.ToString()}})
         LinkLoader.Cancel()
         SyncLock LinkLoader.LockState
             LinkLoader.State = LoadState.Waiting
@@ -506,6 +508,10 @@ Public Class PageLinkMain
             End Sub, "Scan Local LAN Worlds")
     End Sub
 
+    Private Sub BtnLobbyDiagnose_Click() Handles BtnLobbyDiagnose.Click
+        RunNetworkAndFirewallDiagnostics(BtnLobbyDiagnose, "网络与防火墙诊断", IncludeLiveRoom:=False)
+    End Sub
+
     Private Sub BtnQuickJoinClipboard_Click() Handles BtnQuickJoinClipboard.Click
         If LinkState <> LinkStates.Waiting Then
             Hint("当前已在联机状态中，请先退出当前房间后再试。", HintType.Red)
@@ -767,6 +773,9 @@ Public Class PageLinkMain
 
         'UI 更新
         If IsServerSide Then
+            MarkRecentHostActivity()
+            AppEventBus.Publish("link.session.changed", "PageLinkMain",
+                New Newtonsoft.Json.Linq.JObject From {{"state", "finished"}, {"role", "host"}, {"port", ServerPort}})
             LabFinishTitle.Text = "已创建房间"
             LabFinishDesc.Text = $"把邀请码和验证码发给朋友，缺一不可！{vbCrLf}邀请码：{GetInviteCode()}{vbCrLf}验证码：{RoomVerifyCode}"
             BtnFinishExit.Text = "关闭"
@@ -787,6 +796,8 @@ Public Class PageLinkMain
             LabFinishPort.Text = ServerPort
             StartSideChannelHostForRoom()
         Else
+            AppEventBus.Publish("link.session.changed", "PageLinkMain",
+                New Newtonsoft.Json.Linq.JObject From {{"state", "finished"}, {"role", "client"}})
             LabFinishTitle.Text = "已加入房间"
             LabFinishDesc.Text = $"在多人游戏页面的最下方就能找到联机房间，也可直接点击下方按钮启动并直连！{vbCrLf}注意：使用离线登录时不要手动输入 IP！"
             BtnFinishExit.Text = "离开"
@@ -1034,12 +1045,15 @@ Public Class PageLinkMain
                     If Archive.Entries.Count > 100 Then
                         Throw New IO.InvalidDataException($"联机模块压缩包条目数（{Archive.Entries.Count}）异常，已拒绝解压！")
                     End If
+                    Dim AllowedFiles As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+                        LinkCoreName, LinkCliName, "wintun.dll", "Packet.dll", "WinDivert64.sys"
+                    }
                     For Each Entry In Archive.Entries
                         If String.IsNullOrEmpty(Entry.Name) Then Continue For
                         EntryCount += 1
                         If EntryCount > 100 Then Throw New IO.InvalidDataException("联机模块压缩包条目数超出安全上限！")
                         Dim FileName As String = IO.Path.GetFileName(Entry.Name)
-                        If String.IsNullOrWhiteSpace(FileName) Then Continue For
+                        If String.IsNullOrWhiteSpace(FileName) OrElse Not AllowedFiles.Contains(FileName) Then Continue For
                         Dim DestPath As String = IO.Path.GetFullPath(IO.Path.Combine(TempFull, FileName))
                         If Not DestPath.StartsWith(TempFull, StringComparison.OrdinalIgnoreCase) Then
                             Throw New IO.InvalidDataException($"压缩包内包含非法路径：{Entry.FullName}")
@@ -1997,60 +2011,176 @@ Public Class PageLinkMain
             End Sub, "Link Finish Broadcast Friends")
     End Sub
 
+    Private Shared RecentHostActivityFlag As Integer = 0
+
+    Public Shared Sub MarkRecentHostActivity()
+        Threading.Interlocked.Exchange(RecentHostActivityFlag, 1)
+    End Sub
+
+    Public Shared Function ConsumeRecentHostActivity() As Boolean
+        Return Threading.Interlocked.Exchange(RecentHostActivityFlag, 0) = 1
+    End Function
+
     Private Sub BtnLinkDiagnose_Click() Handles BtnLinkDiagnose.Click
         If LinkState <> LinkStates.Finished Then Return
-        BtnLinkDiagnose.IsEnabled = False
-        Hint("正在执行联机隧道与 Minecraft 端口连通性自检…", HintType.Blue)
-        Dim TargetAddr = If(IsServerSide, $"127.0.0.1:{ServerPort}", CurrentClientAddress)
-        Dim PeerSnapshot = Peers
+        RunNetworkAndFirewallDiagnostics(BtnLinkDiagnose, "连通性自检", IncludeLiveRoom:=True)
+    End Sub
+
+    Private Sub RunNetworkAndFirewallDiagnostics(TriggerBtn As MyButton, IdleText As String, IncludeLiveRoom As Boolean)
+        TriggerBtn.IsEnabled = False
+        TriggerBtn.Text = LocalizationCore.TranslateText("诊断中…")
+        Hint("正在执行联机环境、防火墙与节点连通性诊断…", HintType.Blue)
+
+        Dim TargetAddr = If(IncludeLiveRoom, If(IsServerSide, $"127.0.0.1:{ServerPort}", CurrentClientAddress), "")
+        Dim PeerSnapshot = If(IncludeLiveRoom, Peers, Nothing)
         Dim SelfNat = NATType
         Dim CurIsServer = IsServerSide
         Dim CurPort = ServerPort
-        Dim ExtraPorts = ModLink.ParseExtraPorts(Settings.Get(Of String)("LinkExtraPorts"), ServerPort)
+        Dim ExtraPorts = ModLink.ParseExtraPorts(Settings.Get(Of String)("LinkExtraPorts"), If(IncludeLiveRoom, ServerPort, 0))
+        Dim EasyTierExe = IO.Path.Combine(PathUtils.RemoveExtendedPrefix(PathEasyTier), ModLink.LinkCoreName)
+        Dim WinTunDll = IO.Path.Combine(PathUtils.RemoveExtendedPrefix(PathEasyTier), "wintun.dll")
+
+        Dim JavaExe As String = ""
+        Try
+            For Each J In Configs.JavaList.Get()
+                If J Is Nothing OrElse String.IsNullOrWhiteSpace(J.Folder) Then Continue For
+                Dim FolderClean = PathUtils.RemoveExtendedPrefix(J.Folder)
+                Dim C1 = IO.Path.Combine(FolderClean, "javaw.exe")
+                Dim C2 = IO.Path.Combine(FolderClean, "bin", "javaw.exe")
+                If IO.File.Exists(C1) Then JavaExe = C1 : Exit For
+                If IO.File.Exists(C2) Then JavaExe = C2 : Exit For
+            Next
+        Catch
+        End Try
 
         RunInNewThread(
             Sub()
                 Dim Sb As New Text.StringBuilder()
-                Sb.AppendLine($"【角色】{If(CurIsServer, $"房主（映射本地端口 {CurPort}）", $"加入者（本地映射 {TargetAddr}）")}")
-                Sb.AppendLine($"【本机 NAT 类型】{SelfNat}  ｜  【断线自动重连】{If(Settings.Get(Of Boolean)("LinkAutoReconnect"), "已开启", "已关闭")}")
-                Sb.AppendLine($"【扩展穿透端口】{If(ExtraPorts.Any(), String.Join(", ", ExtraPorts), "未配置")}")
-                Sb.AppendLine()
-
-                Dim RoomPeers = If(PeerSnapshot, New List(Of Peer)).Where(Function(p) p.Type = Peer.Types.Server OrElse p.Type = Peer.Types.Client).ToList()
-                Sb.AppendLine($"【隧道成员连通情况】已发现其他成员 {RoomPeers.Count} 位：")
-                If Not RoomPeers.Any() Then
-                    Sb.AppendLine(If(CurIsServer, "• 暂无其他成员连接（可先邀请好友进房）。", "• 尚未同步到房主节点信息，请等待 2~3 秒后重测。"))
+                Sb.AppendLine($"【PCL Linking 联机诊断报告 ({VersionDisplay})】")
+                If IncludeLiveRoom Then
+                    Sb.AppendLine($"• 当前角色：{If(CurIsServer, $"房主（映射本地端口 {CurPort}）", $"加入者（本地映射 {TargetAddr}）")}")
+                    Sb.AppendLine($"• 本机 NAT：{SelfNat} ｜ 自动重连：{If(Settings.Get(Of Boolean)("LinkAutoReconnect"), "开启", "关闭")}")
                 Else
-                    For Each P In RoomPeers
-                        Sb.AppendLine($"• {P.DisplayName} ({P.Ipv4})：{If(P.Relay, "中继模式", "P2P 直连")} · 延迟 {P.Ping:0.0} ms · 丢包 {P.LossRate} · NAT {P.NATType}")
-                    Next
+                    Sb.AppendLine($"• 诊断模式：联机大厅环境与防火墙预检")
+                    Sb.AppendLine($"• 扩展穿透端口：{If(ExtraPorts.Any(), String.Join(", ", ExtraPorts), "未配置")} ｜ 自动重连：{If(Settings.Get(Of Boolean)("LinkAutoReconnect"), "开启", "关闭")}")
                 End If
                 Sb.AppendLine()
 
-                Sb.AppendLine($"【游戏端口可达性探测 ({TargetAddr})】")
-                Dim Probe = PageToolsServerPing.ProbeMinecraftServer(TargetAddr, 2500)
-                If Probe.Online Then
-                    Sb.AppendLine($"✓ SLP 状态探测通过！延迟：{Probe.LatencyMs} ms · 版本：{Probe.VersionName} · 在线人数：{Probe.OnlinePlayers}/{Probe.MaxPlayers}")
-                    Sb.AppendLine("结论：联机隧道与 Minecraft 端口均已打通，可直接在游戏内加入服务器。")
-                Else
-                    Sb.AppendLine($"✗ 暂未收到 Minecraft 服务端回包（{Probe.ErrorMessage}）")
-                    If CurIsServer Then
-                        Sb.AppendLine("排查建议：请确认游戏内已点击「对局域网开放」（且端口号与建房所填一致）或本地开服器已启动，并放行防火墙。")
+                '1. 核心组件与 WinTun
+                Sb.AppendLine("【1. 联机组件完整度】")
+                Sb.AppendLine($"• easytier-core.exe：{If(IO.File.Exists(EasyTierExe), "✓ 已就绪", "✗ 缺失（首次开/加房会自动拉取）")}")
+                Sb.AppendLine($"• wintun.dll：{If(IO.File.Exists(WinTunDll), "✓ 已就绪", "• 按需生成/未使用 TUN 模式（免管理员 --no-tun 正常）")}")
+                Sb.AppendLine()
+
+                '2. Windows 防火墙检测
+                Dim EtRuleOk = EasyTierNetworkCore.QueryFirewallRuleExists("PCL Linking EasyTier")
+                Dim JavaRuleOk = EasyTierNetworkCore.QueryFirewallRuleExists("PCL Linking Java")
+                Sb.AppendLine("【2. Windows 防火墙入站规则】")
+                Sb.AppendLine($"• PCL Linking EasyTier：{If(EtRuleOk.HasValue, If(EtRuleOk.Value, "✓ 已放行", "✗ 未检测到专用放行规则（可能导致无法打洞/连不上）"), "？查询失败")}")
+                Sb.AppendLine($"• PCL Linking Java：{If(JavaRuleOk.HasValue, If(JavaRuleOk.Value, "✓ 已放行", "✗ 未检测到专用放行规则（局域网开放后对方易连接超时）"), "？查询失败")}")
+                Sb.AppendLine()
+
+                '3. 中继节点池连通性探测
+                Sb.AppendLine("【3. 公共与配置节点 TCP 连通实测】")
+                Dim ProbeTargets As New List(Of String)(ModLink.LinkPeers)
+                Dim CustomPeer = Settings.Get(Of String)("LinkCustomPeer")
+                If Not String.IsNullOrWhiteSpace(CustomPeer) Then
+                    For Each Line In CustomPeer.Split({vbCr, vbLf, ","c, ";"c}, StringSplitOptions.RemoveEmptyEntries)
+                        Dim N = EasyTierNetworkCore.NormalizePeerUri(Line)
+                        If N IsNot Nothing AndAlso Not ProbeTargets.Contains(N) Then ProbeTargets.Insert(0, N)
+                    Next
+                End If
+                Dim PeerBench = EasyTierNetworkCore.ProbeTcpPeersConcurrent(ProbeTargets.Take(6), 1800)
+                For Each R In PeerBench
+                    Sb.AppendLine($"• {R.Peer}：{If(R.Reachable, $"✓ {R.LatencyMs} ms", "✗ 超时不可达")}")
+                Next
+
+                '4. 若处于房间中，附带房间成员与 Minecraft SLP 探测
+                If IncludeLiveRoom Then
+                    Sb.AppendLine()
+                    Dim RoomPeers = If(PeerSnapshot, New List(Of Peer)).Where(Function(p) p.Type = Peer.Types.Server OrElse p.Type = Peer.Types.Client).ToList()
+                    Sb.AppendLine($"【4. 隧道成员与游戏端口 ({TargetAddr})】")
+                    If Not RoomPeers.Any() Then
+                        Sb.AppendLine(If(CurIsServer, "• 暂无其他成员连接（可先邀请好友进房）。", "• 尚未同步到房主节点信息，请等待 2~3 秒后重测。"))
                     Else
-                        Sb.AppendLine("排查建议：① 若房主仍在主界面未开局，请让房主在单人世界点「对局域网开放」；② 若上方显示中继丢包高，建议双方改用「节点测速与择优」的同一节点。")
+                        For Each P In RoomPeers
+                            Sb.AppendLine($"• {P.DisplayName}：{If(P.Relay, "中继模式", "P2P 直连")} · 延迟 {P.Ping:0.0} ms · 丢包 {P.LossRate} · NAT {P.NATType}")
+                        Next
+                    End If
+                    Dim Probe = PageToolsServerPing.ProbeMinecraftServer(TargetAddr, 2500)
+                    If Probe.Online Then
+                        Sb.AppendLine($"✓ SLP 状态探测通过！延迟：{Probe.LatencyMs} ms · 版本：{Probe.VersionName} · 在线人数：{Probe.OnlinePlayers}/{Probe.MaxPlayers}")
+                    Else
+                        Sb.AppendLine($"✗ 暂未收到 Minecraft 服务端回包（{Probe.ErrorMessage}）")
+                        Sb.AppendLine(If(CurIsServer,
+                            "排查建议：确认游戏内已点「对局域网开放」且端口一致，并放行防火墙。",
+                            "排查建议：① 确认房主已在单人世界点「对局域网开放」；② 若高丢包建议改用延迟最低节点。"))
                     End If
                 End If
 
-                Dim Report = Sb.ToString().TrimEnd()
+                Dim SafeReport = SecurityGuard.RedactUserPathAndSecrets(Sb.ToString().TrimEnd())
+                Dim CanOfferFirewallFix = ((Not EtRuleOk.GetValueOrDefault(False) AndAlso IO.File.Exists(EasyTierExe)) OrElse
+                                           (Not JavaRuleOk.GetValueOrDefault(False) AndAlso Not String.IsNullOrEmpty(JavaExe)))
+
                 RunInUi(
                     Sub()
-                        BtnLinkDiagnose.IsEnabled = True
-                        If MyMsgBox(Report, "EasyTier 联机连通性诊断报告", "关闭", "复制诊断结果") = 2 Then
-                            ClipboardSet(Report, False)
-                            Hint("已复制联机诊断报告！", HintType.Green)
+                        TriggerBtn.IsEnabled = True
+                        TriggerBtn.Text = LocalizationCore.TranslateText(IdleText)
+                        AppEventBus.Publish("link.diagnostics.completed", "PageLinkMain",
+                            New Newtonsoft.Json.Linq.JObject From {{"live_room", IncludeLiveRoom}, {"needs_fw", CanOfferFirewallFix}})
+                        If CanOfferFirewallFix Then
+                            Dim Choice = MyMsgBox(SafeReport, "EasyTier 联机与防火墙诊断报告", "一键放行防火墙 (UAC)", "复制脱敏诊断报告", "关闭")
+                            If Choice = 1 Then
+                                RunElevatedFirewallFixes(EasyTierExe, JavaExe, Not EtRuleOk.GetValueOrDefault(False), Not JavaRuleOk.GetValueOrDefault(False))
+                            ElseIf Choice = 2 Then
+                                ClipboardSet(SafeReport, False)
+                                Hint("已复制脱敏诊断报告，可直接发群报障！", HintType.Green)
+                            End If
+                        Else
+                            If MyMsgBox(SafeReport, "EasyTier 联机与防火墙诊断报告", "复制脱敏诊断报告", "关闭") = 1 Then
+                                ClipboardSet(SafeReport, False)
+                                Hint("已复制脱敏诊断报告！", HintType.Green)
+                            End If
                         End If
                     End Sub)
-            End Sub, "Link Connectivity Self Diagnose")
+            End Sub, "Link Full Network & Firewall Diagnose")
+    End Sub
+
+    Private Sub RunElevatedFirewallFixes(EasyTierExe As String, JavaExe As String, NeedEt As Boolean, NeedJava As Boolean)
+        Hint("正在请求管理员权限并添加防火墙放行规则…", HintType.Blue)
+        RunInNewThread(
+            Sub()
+                Dim Applied As New List(Of String)
+                Dim Errors As New List(Of String)
+                If NeedEt AndAlso EasyTierNetworkCore.IsSafeExecutablePathForFirewall(EasyTierExe) AndAlso IO.File.Exists(EasyTierExe) Then
+                    Dim ErrEt As String = Nothing
+                    If EasyTierNetworkCore.ApplyFirewallRuleElevated("PCL Linking EasyTier", EasyTierExe, ErrEt) Then
+                        Applied.Add("EasyTier")
+                    ElseIf Not String.IsNullOrEmpty(ErrEt) Then
+                        Errors.Add("EasyTier: " & ErrEt)
+                    End If
+                End If
+                If NeedJava AndAlso EasyTierNetworkCore.IsSafeExecutablePathForFirewall(JavaExe) AndAlso IO.File.Exists(JavaExe) Then
+                    Dim ErrJv As String = Nothing
+                    If EasyTierNetworkCore.ApplyFirewallRuleElevated("PCL Linking Java", JavaExe, ErrJv) Then
+                        Applied.Add("Java")
+                    ElseIf Not String.IsNullOrEmpty(ErrJv) Then
+                        Errors.Add("Java: " & ErrJv)
+                    End If
+                End If
+                RunInUi(
+                    Sub()
+                        If Applied.Any() AndAlso Not Errors.Any() Then
+                            Hint($"已成功为 {String.Join(" 与 ", Applied)} 添加 Windows 防火墙入站放行规则！", HintType.Green)
+                        ElseIf Applied.Any() Then
+                            Hint($"部分规则添加成功（{String.Join("、", Applied)}）；其余失败：{String.Join("; ", Errors)}", HintType.Blue)
+                        ElseIf Errors.Any() Then
+                            Hint($"未能添加防火墙规则：{String.Join("; ", Errors)}", HintType.Red)
+                        Else
+                            Hint("当前未找到可放行的本地 EasyTier 或 Java 程序路径（请先启动过一次联机或游戏）。", HintType.Blue)
+                        End If
+                    End Sub)
+            End Sub, "Apply Elevated Firewall Rules")
     End Sub
 
 #End Region

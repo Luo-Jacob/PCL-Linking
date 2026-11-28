@@ -429,6 +429,28 @@ Public Module ModInstanceSync
         End Using
     End Function
 
+    Private Function BackupFolderRolling(SourceDir As String, BackupRootDir As String, KeepCount As Integer, ByRef OutSnapFolder As String) As Boolean
+        OutSnapFolder = Nothing
+        If String.IsNullOrWhiteSpace(SourceDir) OrElse Not Directory.Exists(SourceDir) Then Return False
+        Try
+            OutSnapFolder = Path.Combine(BackupRootDir, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"))
+            CopyDirectorySafe(SourceDir, OutSnapFolder)
+            If Directory.Exists(BackupRootDir) Then
+                Dim OldBackups = New DirectoryInfo(BackupRootDir).GetDirectories().OrderByDescending(Function(d) d.CreationTimeUtc).Skip(Math.Max(1, KeepCount)).ToList()
+                For Each OldDir In OldBackups
+                    Try
+                        OldDir.Delete(True)
+                    Catch
+                    End Try
+                Next
+            End If
+            Return True
+        Catch ex As Exception
+            Logger.Warn(ex, $"创建滚动备份失败：{SourceDir}")
+            Return False
+        End Try
+    End Function
+
     Public Sub ApplyConfigZipBytes(Instance As McInstance, ZipBytes As Byte())
         If Instance Is Nothing OrElse ZipBytes Is Nothing OrElse ZipBytes.Length = 0 Then Return
         Dim IndieRoot = PathUtils.RemoveExtendedPrefix(Instance.PathIndie)
@@ -437,25 +459,7 @@ Public Module ModInstanceSync
 
         '1. 覆盖前先保留一份本地 config 备份（滚动留最近 3 份）
         Dim SnapFolder As String = Nothing
-        Dim HasBackup As Boolean = False
-        If Directory.Exists(ConfigDir) Then
-            Try
-                SnapFolder = Path.Combine(BackupRoot, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"))
-                CopyDirectorySafe(ConfigDir, SnapFolder)
-                HasBackup = True
-                If Directory.Exists(BackupRoot) Then
-                    Dim OldBackups = New DirectoryInfo(BackupRoot).GetDirectories().OrderByDescending(Function(d) d.CreationTimeUtc).Skip(3).ToList()
-                    For Each OldDir In OldBackups
-                        Try
-                            OldDir.Delete(True)
-                        Catch
-                        End Try
-                    Next
-                End If
-            Catch ex As Exception
-                Logger.Warn(ex, "实例同步覆盖 config 前创建备份失败")
-            End Try
-        End If
+        Dim HasBackup = BackupFolderRolling(ConfigDir, BackupRoot, 3, SnapFolder)
 
         '2. 防 ZipSlip 与 Zip 炸弹解压覆盖
         Try
@@ -474,6 +478,208 @@ Public Module ModInstanceSync
             Throw
         End Try
     End Sub
+
+    Public ReadOnly AllowedEnvPackFolders As String() = {"mods", "config", "defaultconfigs", "kubejs", "resourcepacks", "shaderpacks"}
+    Private Const MaxEnvPackEntries As Integer = 15000
+    Private Const MaxEnvPackUncompressedBytes As Long = 4L * 1024L * 1024L * 1024L
+
+    Public Function PackInstanceEnvironmentToZip(Instance As McInstance, IncludedDirs As IEnumerable(Of String),
+                                                 ExcludeModrinthJars As Boolean, ByRef OutTempZipPath As String,
+                                                 ByRef OutFileCount As Integer, ByRef OutSizeBytes As Long,
+                                                 Optional OnProgress As Action(Of Integer, Integer) = Nothing) As String
+        OutTempZipPath = ""
+        OutFileCount = 0
+        OutSizeBytes = 0
+        If Instance Is Nothing Then Return "未选择有效的游戏实例！"
+
+        Dim ValidDirs = If(IncludedDirs, Array.Empty(Of String)()) _
+            .Select(Function(d) If(d, "").Trim().ToLowerInvariant()) _
+            .Where(Function(d) AllowedEnvPackFolders.Contains(d)) _
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        If Not ValidDirs.Any() Then Return "请至少勾选一个要打包的实例目录！"
+
+        Dim SkipModFileNames As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        If ExcludeModrinthJars AndAlso ValidDirs.Contains("mods") Then
+            Try
+                Dim Manifest = ModFriends.BuildInstanceModSyncManifest(Instance)
+                If Manifest?.Items IsNot Nothing Then
+                    For Each Item In Manifest.Items
+                        If Not String.IsNullOrWhiteSpace(Item.F) AndAlso
+                           Not String.IsNullOrWhiteSpace(Item.I) AndAlso
+                           Not String.IsNullOrWhiteSpace(Item.H) AndAlso
+                           Item.P = CInt(ResourcePlatforms.Modrinth) Then
+                            SkipModFileNames.Add(Item.F)
+                        End If
+                    Next
+                End If
+            Catch exMan As Exception
+                Logger.Warn(exMan, "构建 Modrinth 差分剔除列表失败，将改打包全部 Mods")
+            End Try
+        End If
+
+        Dim IndieRoot = PathUtils.RemoveExtendedPrefix(Instance.PathIndie).TrimEnd("\"c, "/"c)
+        Dim Entries As New List(Of (FullPath As String, RelPath As String))
+        For Each SubDirName In ValidDirs
+            Dim FolderPath = Path.Combine(IndieRoot, SubDirName)
+            If Not Directory.Exists(FolderPath) Then Continue For
+            For Each FPath In Directory.EnumerateFiles(FolderPath, "*", SearchOption.AllDirectories)
+                If IsIgnoredConfigFile(FPath) Then Continue For
+                If SubDirName = "mods" AndAlso SkipModFileNames.Contains(Path.GetFileName(FPath)) Then Continue For
+                Dim Rel = SubDirName & "\" & FPath.Substring(FolderPath.Length).TrimStart("\"c, "/"c)
+                Entries.Add((FPath, Rel.Replace("\"c, "/"c)))
+                If Entries.Count > MaxEnvPackEntries Then
+                    Return $"待打包文件总数超过 {MaxEnvPackEntries} 个安全上限，请取消勾选大型材质/光影后重试！"
+                End If
+            Next
+        Next
+        If Not Entries.Any() Then Return "所选目录中没有可打包的文件（或全部为可在线拉取的 Modrinth 模组）！"
+
+        Dim CacheDir = Path.Combine(PathUtils.RemoveExtendedPrefix(PathTemp), "Cache")
+        Directory.CreateDirectory(CacheDir)
+        Dim SafeInstName = If(Instance.Name, "Instance")
+        For Each BadCh In Path.GetInvalidFileNameChars()
+            SafeInstName = SafeInstName.Replace(BadCh, "_"c)
+        Next
+        SafeInstName = SafeInstName.Replace("..", "_").Trim("."c, " "c)
+        If String.IsNullOrWhiteSpace(SafeInstName) Then SafeInstName = "Instance"
+        Dim TempZip = Path.Combine(CacheDir, $"EnvPack_{SafeInstName}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.zip")
+        Try
+            Using Zip = ZipFile.Open(TempZip, ZipArchiveMode.Create)
+                Dim MetaJson = New Newtonsoft.Json.Linq.JObject From {
+                    {"v", 1},
+                    {"instance", Instance.Name},
+                    {"mc", Instance.Version.VanillaName},
+                    {"loader", CInt(Instance.Version.ModLoaders)},
+                    {"dirs", New Newtonsoft.Json.Linq.JArray(ValidDirs)},
+                    {"diff_skip_modrinth", ExcludeModrinthJars},
+                    {"packed_utc", DateTime.UtcNow.ToString("o")}
+                }
+                Dim MetaEntry = Zip.CreateEntry("pcllk-env-meta.json", CompressionLevel.Optimal)
+                Using Sw As New StreamWriter(MetaEntry.Open(), New UTF8Encoding(False))
+                    Sw.Write(MetaJson.ToString(Newtonsoft.Json.Formatting.Indented))
+                End Using
+
+                Dim TotalCnt = Entries.Count
+                For i = 0 To TotalCnt - 1
+                    Dim Item = Entries(i)
+                    Try
+                        Zip.CreateEntryFromFile(Item.FullPath, Item.RelPath, CompressionLevel.Optimal)
+                        OutFileCount += 1
+                    Catch exAdd As Exception
+                        Logger.Warn(exAdd, $"环境快照打包跳过文件：{Item.FullPath}")
+                    End Try
+                    If (i + 1) Mod 20 = 0 OrElse i = TotalCnt - 1 Then
+                        OnProgress?.Invoke(i + 1, TotalCnt)
+                    End If
+                Next
+            End Using
+            OutSizeBytes = New FileInfo(TempZip).Length
+            OutTempZipPath = TempZip
+            AppEventBus.Publish("instance.env_pack.created", "ModInstanceSync",
+                New Newtonsoft.Json.Linq.JObject From {{"instance", Instance.Name}, {"files", OutFileCount}, {"bytes", OutSizeBytes}})
+            Return Nothing
+        Catch ex As Exception
+            Try
+                If File.Exists(TempZip) Then File.Delete(TempZip)
+            Catch
+            End Try
+            Return "打包环境快照失败：" & ex.Message
+        End Try
+    End Function
+
+    Public Function ApplyEnvironmentPackZip(TargetInst As McInstance, ZipFilePath As String, ByRef OutExtractedFiles As Integer, ByRef OutBackupSummary As String) As String
+        OutExtractedFiles = 0
+        OutBackupSummary = ""
+        If TargetInst Is Nothing Then Return "请先在左侧/主界面选择要应用环境包的本地游戏实例！"
+        If IsInstanceBusyOrRunning(TargetInst) Then
+            Return $"实例「{TargetInst.Name}」正在运行或被占用，请先关闭游戏后再应用环境快照！"
+        End If
+        Dim IndieRoot = PathUtils.RemoveExtendedPrefix(TargetInst.PathIndie).TrimEnd("\"c, "/"c)
+        Dim BackupRoot = Path.Combine(PathUtils.RemoveExtendedPrefix(TargetInst.PathVersion), "PCL Linking", "EnvPackBackups")
+
+        Dim ConfigSnap As String = Nothing
+        If BackupFolderRolling(Path.Combine(IndieRoot, "config"), Path.Combine(BackupRoot, "config"), 3, ConfigSnap) Then
+            OutBackupSummary = "已自动备份旧 config"
+        End If
+
+        Try
+            OutExtractedFiles = ZipSafetyCore.ExtractZipFileSafely(
+                ZipFilePath, IndieRoot, MaxEnvPackEntries, MaxEnvPackUncompressedBytes,
+                AllowedTopFolders:=AllowedEnvPackFolders,
+                OnEntrySkippedOrBlocked:=Sub(EntryName) Logger.Warn($"环境包导入已跳过/拦截条目：{EntryName}"))
+            If OutExtractedFiles <= 0 Then
+                Return "压缩包中未包含可应用的游戏环境目录（仅支持 mods / config / defaultconfigs / kubejs / resourcepacks / shaderpacks）。"
+            End If
+            AppEventBus.Publish("instance.env_pack.applied", "ModInstanceSync",
+                New Newtonsoft.Json.Linq.JObject From {{"instance", TargetInst.Name}, {"files", OutExtractedFiles}})
+            Return Nothing
+        Catch ex As Exception
+            Return "应用环境快照失败：" & ex.Message
+        End Try
+    End Function
+
+    Public Function PackWorldSaveToTempZip(WorldDirPath As String, ByRef OutTempZip As String, ByRef OutSizeBytes As Long, ByRef OutSha256Hex As String,
+                                           Optional OnProgress As Action(Of Integer, Integer) = Nothing) As String
+        OutTempZip = ""
+        OutSizeBytes = 0
+        OutSha256Hex = ""
+        If String.IsNullOrWhiteSpace(WorldDirPath) OrElse Not Directory.Exists(WorldDirPath) Then
+            Return "找不到指定的世界存档目录！"
+        End If
+        Dim CacheDir = Path.Combine(PathUtils.RemoveExtendedPrefix(PathTemp), "Cache")
+        Directory.CreateDirectory(CacheDir)
+        Dim WorldName = Path.GetFileName(WorldDirPath.TrimEnd("\"c, "/"c))
+        Dim TmpZip = Path.Combine(CacheDir, $"SaveRelay_{Guid.NewGuid().ToString("N").Substring(0, 10)}.zip")
+        Try
+            Dim Res = EasyTierSideChannelCore.PackWorldSaveToZip(WorldDirPath, TmpZip, OnProgress)
+            OutTempZip = TmpZip
+            OutSizeBytes = Res.SizeBytes
+            OutSha256Hex = Res.Sha256
+            Return Nothing
+        Catch ex As Exception
+            Try
+                If File.Exists(TmpZip) Then File.Delete(TmpZip)
+            Catch
+            End Try
+            Return "打包世界存档失败：" & ex.Message
+        End Try
+    End Function
+
+    Public Function ApplySaveRelayZipToInstance(TargetInst As McInstance, ZipFilePath As String, WorldName As String, ByRef OutFinalWorldDir As String, ByRef OutBackupNote As String) As String
+        OutFinalWorldDir = ""
+        OutBackupNote = ""
+        If TargetInst Is Nothing Then Return "请先选择要导入存档的游戏实例！"
+        If IsInstanceBusyOrRunning(TargetInst) Then
+            Return $"实例「{TargetInst.Name}」正在运行或被占用，请先退出游戏后再导入接力存档！"
+        End If
+        Dim CleanWorld = If(WorldName, "RelayWorld").Trim()
+        For Each BadCh In Path.GetInvalidFileNameChars()
+            CleanWorld = CleanWorld.Replace(BadCh, "_"c)
+        Next
+        CleanWorld = CleanWorld.Trim("."c, " "c)
+        If String.IsNullOrWhiteSpace(CleanWorld) OrElse Not SecurityGuard.IsSafeRelativePath(CleanWorld) Then
+            CleanWorld = "RelayWorld"
+        End If
+
+        Dim IndieRoot = PathUtils.RemoveExtendedPrefix(TargetInst.PathIndie).TrimEnd("\"c, "/"c)
+        Dim SavesDir = Path.Combine(IndieRoot, "saves")
+        Directory.CreateDirectory(SavesDir)
+        Dim DestWorldDir = Path.Combine(SavesDir, CleanWorld)
+
+        If Directory.Exists(DestWorldDir) Then
+            Dim BackupRoot = Path.Combine(PathUtils.RemoveExtendedPrefix(TargetInst.PathVersion), "PCL Linking", "SaveRelayBackups", CleanWorld)
+            Dim SnapDir As String = Nothing
+            If BackupFolderRolling(DestWorldDir, BackupRoot, 5, SnapDir) Then
+                OutBackupNote = $"已自动备份原本地存档至 {Path.GetFileName(SnapDir)}"
+            End If
+        End If
+
+        EasyTierSideChannelCore.ExtractWorldSaveZipSafely(ZipFilePath, DestWorldDir, DeleteZipAfter:=True)
+        OutFinalWorldDir = DestWorldDir
+        AppEventBus.Publish("save_relay.imported", "ModInstanceSync",
+            New Newtonsoft.Json.Linq.JObject From {{"instance", TargetInst.Name}, {"world", CleanWorld}})
+        Return Nothing
+    End Function
 
     Private Sub CopyDirectorySafe(SrcDir As String, DestDir As String)
         ZipSafetyCore.CopyDirectorySafe(SrcDir, DestDir)

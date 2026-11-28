@@ -1198,4 +1198,123 @@ NextStack:
         Return "✅ 当前缓存的实时日志中未发现致命崩溃或严重异常堆栈。"
     End Function
 
+    Public LastSuspiciousLines As List(Of String) = New List(Of String)
+
+    ''' <summary>
+    ''' 扫描指定实例的最新 crash-reports、hs_err 与 latest.log（不受 3 分钟时间窗限制），用于百宝箱主动诊断。
+    ''' </summary>
+    Public Function AnalyzeInstanceOfflineOrRecent(ByRef OutMatchedFiles As List(Of String)) As String
+        OutMatchedFiles = New List(Of String)
+        LastSuspiciousLines = New List(Of String)
+        If TargetInstance Is Nothing Then Return "未选择有效的游戏实例。"
+
+        Dim IndieDir = PathUtils.RemoveExtendedPrefix(TargetInstance.PathIndie).TrimEnd("\"c, "/"c)
+        Dim Candidates As New List(Of String)
+        Try
+            Dim CrashDir = Path.Combine(IndieDir, "crash-reports")
+            If Directory.Exists(CrashDir) Then
+                Candidates.AddRange(Directory.GetFiles(CrashDir, "crash-*.txt").OrderByDescending(Function(f) File.GetLastWriteTimeUtc(f)).Take(2))
+            End If
+        Catch
+        End Try
+        Try
+            Candidates.AddRange(Directory.GetFiles(IndieDir, "hs_err*.log").OrderByDescending(Function(f) File.GetLastWriteTimeUtc(f)).Take(1))
+        Catch
+        End Try
+        Dim LatestLog = Path.Combine(IndieDir, "logs", "latest.log")
+        If File.Exists(LatestLog) Then Candidates.Add(LatestLog)
+
+        If Not Candidates.Any() Then
+            Return "该实例目录下未找到 crash-reports、hs_err 或 logs\latest.log。"
+        End If
+
+        Dim FallbackLines As List(Of String) = Nothing
+        For Each FPath In Candidates.Distinct()
+            Try
+                Dim Lines = FileUtils.ReadAsLines(FPath)
+                If Lines IsNot Nothing AndAlso Lines.Length > 0 Then
+                    AnalyzeRawFiles.Add(New KeyValuePair(Of String, String())(FPath, Lines))
+                    OutMatchedFiles.Add(Path.GetFileName(FPath))
+                    If FPath.EndsWith("latest.log", StringComparison.OrdinalIgnoreCase) OrElse FallbackLines Is Nothing Then
+                        FallbackLines = Lines.ToList()
+                    End If
+                End If
+            Catch ex As Exception
+                Logger.Warn(ex, $"读取实例崩溃分析文件失败：{FPath}")
+            End Try
+        Next
+        If Not AnalyzeRawFiles.Any() Then Return "日志文件为空或无法读取。"
+
+        If Prepare() Then
+            Analyze()
+            If CrashReasons.Any() Then
+                If FallbackLines IsNot Nothing Then LastSuspiciousLines = InstanceDiffCore.ExtractSuspiciousLogLines(FallbackLines, 5)
+                Return GetAnalyzeResult(True)
+            End If
+        End If
+
+        If FallbackLines IsNot Nothing Then
+            LastSuspiciousLines = InstanceDiffCore.ExtractSuspiciousLogLines(FallbackLines, 10)
+            If LastSuspiciousLines.Any() Then
+                Return "未命中已知致命崩溃规则，但在日志中提取到以下关键异常堆栈：" & vbCrLf & vbCrLf &
+                       String.Join(vbCrLf, LastSuspiciousLines.Select(Function(s) "• " & s.Trim()))
+            End If
+        End If
+        Return "✅ 已扫描实例最新日志，未发现明显崩溃原因或严重报错。"
+    End Function
+
+    ''' <summary>
+    ''' 直接导入外部崩溃日志/压缩包并返回分析结论。
+    ''' </summary>
+    Public Function AnalyzeImportedFile(TargetPath As String) As String
+        LastSuspiciousLines = New List(Of String)
+        If String.IsNullOrWhiteSpace(TargetPath) OrElse Not File.Exists(TargetPath) Then
+            Return "找不到指定的日志文件或崩溃报告压缩包。"
+        End If
+        Import(TargetPath)
+        If Prepare() Then
+            Analyze()
+            If CrashReasons.Any() Then Return GetAnalyzeResult(True)
+        End If
+        Try
+            Dim Ext = Path.GetExtension(TargetPath).ToLowerInvariant()
+            If Ext = ".txt" OrElse Ext = ".log" Then
+                LastSuspiciousLines = InstanceDiffCore.ExtractSuspiciousLogLines(File.ReadAllLines(TargetPath, Text.Encoding.UTF8), 10)
+            End If
+        Catch
+        End Try
+        If LastSuspiciousLines.Any() Then
+            Return "未命中精确规则，但提取到以下异常堆栈/报错行：" & vbCrLf &
+                   String.Join(vbCrLf, LastSuspiciousLines.Select(Function(s) "• " & s.Trim()))
+        End If
+        Return "未能从所选文件中识别出明确崩溃原因，请确认文件为 Minecraft latest.log / crash-*.txt 或完整日志压缩包。"
+    End Function
+
+    ''' <summary>
+    ''' 生成已自动脱敏 Windows 用户名路径的「群报障精简摘要」，便于用户发群求助。
+    ''' </summary>
+    Public Shared Function BuildRedactedBugSummary(TargetInstance As McInstance, DiagnosisText As String, SuspiciousLines As IEnumerable(Of String)) As String
+        Dim Sb As New Text.StringBuilder()
+        Sb.AppendLine($"【PCL Linking 游戏日志诊断摘要 ({VersionDisplay})】")
+        If TargetInstance IsNot Nothing Then
+            Sb.AppendLine($"实例：{TargetInstance.Name} | MC {TargetInstance.Version.VanillaName} | 加载器：{TargetInstance.Version.ModLoaders}")
+        End If
+        Dim CleanDiag = SecurityGuard.RedactUserPathAndSecrets(If(DiagnosisText, "")).Trim()
+        Dim DiagLines = CleanDiag.Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries).Take(8)
+        Sb.AppendLine("诊断结论：")
+        For Each L In DiagLines
+            Sb.AppendLine("  " & L.Trim())
+        Next
+        If SuspiciousLines IsNot Nothing AndAlso SuspiciousLines.Any() Then
+            Sb.AppendLine("关键报错行：")
+            For Each S In SuspiciousLines.Take(5)
+                Sb.AppendLine("  • " & SecurityGuard.RedactUserPathAndSecrets(S.Trim()))
+            Next
+        End If
+        Dim OutText = Sb.ToString().TrimEnd()
+        AppEventBus.Publish("game.crash_diagnosed", "CrashAnalyzer",
+            New Newtonsoft.Json.Linq.JObject From {{"instance", If(TargetInstance?.Name, "imported")}, {"summary_len", OutText.Length}})
+        Return OutText
+    End Function
+
 End Class

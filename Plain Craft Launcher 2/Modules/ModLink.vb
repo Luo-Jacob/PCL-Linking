@@ -90,17 +90,24 @@ Public Module ModLink
 
 #Region "节点池"
 
+    Private _LastCommunityPoolFailUtc As DateTime = DateTime.MinValue
+
     ''' <summary>
     ''' 从社区节点池获取当前在线的中继节点。任何失败都返回空列表，由调用方回退到内置节点。
     ''' </summary>
     Public Function GetCommunityPeers() As List(Of String)
         Dim Result As New List(Of String)
         If Not Settings.Get(Of Boolean)("LinkPeerPool") Then Return Result
+        If _LastCommunityPoolFailUtc <> DateTime.MinValue AndAlso (DateTime.UtcNow - _LastCommunityPoolFailUtc).TotalSeconds < 120 Then
+            Return Result
+        End If
         Try
-            Dim Raw As String = NetRequestByClient(LinkNodeApi, Timeout:=6000, RequireJson:=True, MakeLog:=False)
+            Dim Raw As String = NetRequestByClient(LinkNodeApi, Timeout:=3000, RequireJson:=True, MakeLog:=False)
             Result = EasyTierNetworkCore.ParseCommunityNodesJson(Raw)
+            _LastCommunityPoolFailUtc = DateTime.MinValue
             Logger.Info($"社区节点池返回 {Result.Count} 个可用节点")
         Catch ex As Exception
+            _LastCommunityPoolFailUtc = DateTime.UtcNow
             Logger.Warn(ex, "获取社区节点池失败，将使用内置节点")
         End Try
         Return Result

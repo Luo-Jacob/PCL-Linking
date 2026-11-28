@@ -67,7 +67,7 @@ Public Module ModFriends
         Public Property PeerId As String = ""
         Public Property FromMe As Boolean = False
         Public Property Time As Long = 0
-        ''' <summary>text、invite、modsync、file、group_invite、inst_sync、ping、pong。</summary>
+        ''' <summary>text、invite、modsync、file、save_relay、group_invite、inst_sync、ping、pong。</summary>
         Public Property Kind As String = "text"
         Public Property Text As String = ""
         Public Property InviteCode As String = ""
@@ -83,6 +83,7 @@ Public Module ModFriends
         Public Property FileUrl As String = ""
         Public Property FileKey As String = ""
         Public Property FileSha256 As String = ""
+        Public Property WorldName As String = ""
 
         Public Property GroupInviteId As String = ""
         Public Property GroupInviteName As String = ""
@@ -121,6 +122,10 @@ Public Module ModFriends
         Public Property Blocked As New List(Of String)
         Public Property Since As Long = 0
         Public Property RelayUrl As String = "https://ntfy.sh"
+        Public Property FileStorageMode As String = "auto"
+        Public Property PixeldrainApiKeyEnc As String = ""
+        Public Property WebDavConfigEnc As String = ""
+        Public Property S3ConfigEnc As String = ""
         Public Property PollSeconds As Integer = 6
         Public Property UnreadCounts As New Dictionary(Of String, Integer)
         Public Property GroupUnreadCounts As New Dictionary(Of String, Integer)
@@ -794,6 +799,245 @@ Public Module ModFriends
         End Try
     End Function
 
+    Private ReadOnly PixeldrainKeyEntropy As Byte() = System.Text.Encoding.UTF8.GetBytes("PCLLK-Pixeldrain-ApiKey-v1")
+
+    ''' <summary>读取经 Windows DPAPI 保护的 Pixeldrain API Key（未配置返回空字符串）。</summary>
+    Public Function GetPixeldrainApiKey() As String
+        Dim Stored As String
+        SyncLock DataLock
+            Stored = If(GetData().PixeldrainApiKeyEnc, "").Trim()
+        End SyncLock
+        If String.IsNullOrEmpty(Stored) Then Return ""
+        Try
+            Dim Plain As String = ""
+            If DpapiCredentialCore.TryUnprotectString(Stored, PixeldrainKeyEntropy, Plain) Then
+                Return If(Plain, "").Trim()
+            End If
+            Return Stored
+        Catch ex As Exception
+            Logger.Warn(ex, "解密 Pixeldrain API Key 失败，请重新配置")
+            Return ""
+        End Try
+    End Function
+
+    Public Function HasPixeldrainApiKey() As Boolean
+        Return Not String.IsNullOrWhiteSpace(GetPixeldrainApiKey())
+    End Function
+
+    Public Sub SetPixeldrainApiKey(RawKey As String)
+        Dim Trimmed = If(RawKey, "").Trim()
+        Dim Enc As String = ""
+        If Not String.IsNullOrEmpty(Trimmed) Then
+            Enc = DpapiCredentialCore.ProtectString(Trimmed, PixeldrainKeyEntropy)
+        End If
+        SyncLock DataLock
+            GetData().PixeldrainApiKeyEnc = Enc
+        End SyncLock
+        SaveData()
+    End Sub
+
+    Private ReadOnly WebDavConfigEntropy As Byte() = System.Text.Encoding.UTF8.GetBytes("PCLLK-WebDav-Config-v1")
+    Private ReadOnly S3ConfigEntropy As Byte() = System.Text.Encoding.UTF8.GetBytes("PCLLK-S3-Config-v1")
+
+    Public Class TransferJobInfo
+        Public Property Id As String = ""
+        Public Property Direction As String = "download" 'upload | download
+        Public Property FileName As String = ""
+        Public Property Provider As String = ""
+        Public Property StatusText As String = ""
+        Public Property CurrentChunk As Integer = 0
+        Public Property TotalChunks As Integer = 1
+        Public Property IsCompleted As Boolean = False
+        Public Property ErrorText As String = ""
+        Public Property UpdatedUtc As DateTime = DateTime.UtcNow
+        Public Property Cts As Threading.CancellationTokenSource = Nothing
+    End Class
+
+    Private ReadOnly ActiveTransferLock As New Object
+    Private ReadOnly TransferHistory As New List(Of TransferJobInfo)
+
+    Public Function GetTransferHistorySnapshot() As List(Of TransferJobInfo)
+        SyncLock ActiveTransferLock
+            Return TransferHistory.OrderByDescending(Function(t) t.UpdatedUtc).Take(30).ToList()
+        End SyncLock
+    End Function
+
+    Public Function RegisterTransferJob(Direction As String, FileName As String, Provider As String, Cts As Threading.CancellationTokenSource) As TransferJobInfo
+        Dim Job As New TransferJobInfo With {
+            .Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+            .Direction = Direction,
+            .FileName = FileName,
+            .Provider = Provider,
+            .StatusText = "准备中…",
+            .Cts = Cts
+        }
+        SyncLock ActiveTransferLock
+            TransferHistory.Add(Job)
+            If TransferHistory.Count > 40 Then TransferHistory.RemoveAt(0)
+        End SyncLock
+        Return Job
+    End Function
+
+    Public Sub UpdateTransferJob(Job As TransferJobInfo, StatusText As String, CurChunk As Integer, TotalChunks As Integer,
+                                 Optional Completed As Boolean = False, Optional ErrText As String = Nothing)
+        If Job Is Nothing Then Return
+        SyncLock ActiveTransferLock
+            Job.StatusText = StatusText
+            Job.CurrentChunk = CurChunk
+            Job.TotalChunks = Math.Max(1, TotalChunks)
+            Job.IsCompleted = Completed
+            Job.ErrorText = If(ErrText, "")
+            Job.UpdatedUtc = DateTime.UtcNow
+        End SyncLock
+        AppEventBus.Publish("friends.transfer.progress", "ModFriends",
+            New JObject From {{"id", Job.Id}, {"dir", Job.Direction}, {"file", Job.FileName}, {"cur", CurChunk}, {"total", TotalChunks}, {"done", Completed}})
+    End Sub
+
+    Public Function GetFileStorageMode() As String
+        SyncLock DataLock
+            Dim M = If(GetData().FileStorageMode, "auto").Trim().ToLowerInvariant()
+            Return If(String.IsNullOrEmpty(M), "auto", M)
+        End SyncLock
+    End Function
+
+    Public Sub SetFileStorageMode(Mode As String)
+        Dim Clean = If(Mode, "auto").Trim().ToLowerInvariant()
+        If Not {"auto", "ntfy", "pixeldrain", "webdav", "s3"}.Contains(Clean) Then Clean = "auto"
+        SyncLock DataLock
+            GetData().FileStorageMode = Clean
+        End SyncLock
+        SaveData()
+    End Sub
+
+    Public Function GetWebDavConfig() As CloudStorageCore.WebDavStorageConfig
+        Dim Stored As String
+        SyncLock DataLock
+            Stored = If(GetData().WebDavConfigEnc, "").Trim()
+        End SyncLock
+        If String.IsNullOrEmpty(Stored) Then Return Nothing
+        Try
+            Dim Plain As String = ""
+            Dim JsonRaw = If(DpapiCredentialCore.TryUnprotectString(Stored, WebDavConfigEntropy, Plain), Plain, Stored)
+            Return Newtonsoft.Json.JsonConvert.DeserializeObject(Of CloudStorageCore.WebDavStorageConfig)(JsonRaw)
+        Catch ex As Exception
+            Logger.Warn(ex, "解密 WebDAV 配置失败")
+            Return Nothing
+        End Try
+    End Function
+
+    Public Sub SetWebDavConfig(Cfg As CloudStorageCore.WebDavStorageConfig)
+        Dim Enc As String = ""
+        If Cfg IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Cfg.EndpointUrl) Then
+            Dim JsonText = Newtonsoft.Json.JsonConvert.SerializeObject(Cfg)
+            Enc = DpapiCredentialCore.ProtectString(JsonText, WebDavConfigEntropy)
+        End If
+        SyncLock DataLock
+            GetData().WebDavConfigEnc = Enc
+        End SyncLock
+        SaveData()
+    End Sub
+
+    Public Function GetS3Config() As CloudStorageCore.S3StorageConfig
+        Dim Stored As String
+        SyncLock DataLock
+            Stored = If(GetData().S3ConfigEnc, "").Trim()
+        End SyncLock
+        If String.IsNullOrEmpty(Stored) Then Return Nothing
+        Try
+            Dim Plain As String = ""
+            Dim JsonRaw = If(DpapiCredentialCore.TryUnprotectString(Stored, S3ConfigEntropy, Plain), Plain, Stored)
+            Return Newtonsoft.Json.JsonConvert.DeserializeObject(Of CloudStorageCore.S3StorageConfig)(JsonRaw)
+        Catch ex As Exception
+            Logger.Warn(ex, "解密 S3 配置失败")
+            Return Nothing
+        End Try
+    End Function
+
+    Public Sub SetS3Config(Cfg As CloudStorageCore.S3StorageConfig)
+        Dim Enc As String = ""
+        If Cfg IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Cfg.EndpointUrl) Then
+            Dim JsonText = Newtonsoft.Json.JsonConvert.SerializeObject(Cfg)
+            Enc = DpapiCredentialCore.ProtectString(JsonText, S3ConfigEntropy)
+        End If
+        SyncLock DataLock
+            GetData().S3ConfigEnc = Enc
+        End SyncLock
+        SaveData()
+    End Sub
+
+    Public Function ResolveEffectiveFileStorageProvider() As String
+        Dim Mode = GetFileStorageMode()
+        Dim Dav = GetWebDavConfig()
+        Dim S3 = GetS3Config()
+        Dim PdKey = GetPixeldrainApiKey()
+        If Mode = "s3" AndAlso S3 IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(S3.EndpointUrl) Then Return "s3"
+        If Mode = "webdav" AndAlso Dav IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Dav.EndpointUrl) Then Return "webdav"
+        If (Mode = "pixeldrain" OrElse Mode = "auto") AndAlso Not String.IsNullOrWhiteSpace(PdKey) Then Return "pixeldrain"
+        If Mode = "auto" Then
+            If S3 IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(S3.EndpointUrl) Then Return "s3"
+            If Dav IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Dav.EndpointUrl) Then Return "webdav"
+        End If
+        Return "ntfy"
+    End Function
+
+    Public Function UploadEncryptedFile(FilePath As String, ByRef OutUrl As String, ByRef OutKeyB64 As String,
+                                        ByRef OutSha256Hex As String, ByRef OutProvider As String,
+                                        Optional OnProgress As Action(Of String, Integer, Integer) = Nothing) As String
+        Using Cts As New CancellationTokenSource()
+            Dim Job = RegisterTransferJob("upload", Path.GetFileName(If(FilePath, "file")), ResolveEffectiveFileStorageProvider(), Cts)
+            Try
+                Dim Mode = GetFileStorageMode()
+                If Mode = "auto" Then Mode = ResolveEffectiveFileStorageProvider()
+                Dim Err = FriendsCryptoProtocol.UploadEncryptedFileWithBackendCore(
+                    Relay(), Mode, GetPixeldrainApiKey(), GetWebDavConfig(), GetS3Config(), FriendsUserAgent(), FilePath,
+                    OutUrl, OutKeyB64, OutSha256Hex, OutProvider,
+                    Sub(St, Cur, Tot)
+                        UpdateTransferJob(Job, $"{St} {Cur}/{Tot}", Cur, Tot, False)
+                        OnProgress?.Invoke(St, Cur, Tot)
+                    End Sub)
+                UpdateTransferJob(Job, If(Err Is Nothing, "已完成", "失败"), Job.CurrentChunk, Job.TotalChunks, True, Err)
+                Return Err
+            Catch ex As Exception
+                Logger.Warn(ex, "流式加密上传大文件失败")
+                UpdateTransferJob(Job, "失败", Job.CurrentChunk, Job.TotalChunks, True, ex.Message)
+                Return "上传加密文件失败：" & ex.Message
+            End Try
+        End Using
+    End Function
+
+    Public Function DownloadAndDecryptFileToPath(FileUrl As String, KeyB64 As String, ExpectedSha256Hex As String, SavePath As String,
+                                               Optional OnProgress As Action(Of String, Integer, Integer) = Nothing,
+                                               Optional AllowExternalPublicHttps As Boolean = True,
+                                               Optional CancelToken As CancellationToken = Nothing) As String
+        Using LinkedCts = CancellationTokenSource.CreateLinkedTokenSource(CancelToken)
+            Dim Job = RegisterTransferJob("download", Path.GetFileName(If(SavePath, "file")), "auto", LinkedCts)
+            Try
+                Dim Err = FriendsCryptoProtocol.DownloadAndDecryptFileToPathCore(
+                    Relay(), FriendsUserAgent(), FileUrl, KeyB64, ExpectedSha256Hex, SavePath,
+                    Sub(St, Cur, Tot)
+                        UpdateTransferJob(Job, $"{St} {Cur}/{Tot}", Cur, Tot, False)
+                        OnProgress?.Invoke(St, Cur, Tot)
+                    End Sub, AllowExternalPublicHttps, LinkedCts.Token)
+                UpdateTransferJob(Job, If(Err Is Nothing, "已完成", "已暂停/失败"), Job.CurrentChunk, Job.TotalChunks, True, Err)
+                Return Err
+            Catch ex As Exception
+                Logger.Warn(ex, "下载并解密大文件失败")
+                UpdateTransferJob(Job, "失败", Job.CurrentChunk, Job.TotalChunks, True, ex.Message)
+                Return "下载或解密失败：" & ex.Message
+            End Try
+        End Using
+    End Function
+
+    Public Function BuildFilePickupCode(FileName As String, FileSize As Long, FileUrl As String, KeyB64 As String, Sha256Hex As String) As String
+        Return FriendsCryptoProtocol.EncodeFilePickupCode(FileName, FileSize, FileUrl, KeyB64, Sha256Hex)
+    End Function
+
+    Public Function TryParseFilePickupCode(Code As String, ByRef OutFileName As String, ByRef OutFileSize As Long,
+                                           ByRef OutFileUrl As String, ByRef OutKeyB64 As String, ByRef OutSha256Hex As String,
+                                           ByRef OutErr As String) As Boolean
+        Return FriendsCryptoProtocol.TryDecodeFilePickupCode(Code, OutFileName, OutFileSize, OutFileUrl, OutKeyB64, OutSha256Hex, OutErr)
+    End Function
+
     Private Function BuildPayloadJson(Msg As FriendMessage) As JObject
         Dim Payload As New JObject()
         Payload.Add("k", New JValue(Msg.Kind))
@@ -807,6 +1051,7 @@ Public Module ModFriends
         If Not String.IsNullOrEmpty(Msg.FileUrl) Then Payload.Add("fu", New JValue(Msg.FileUrl))
         If Not String.IsNullOrEmpty(Msg.FileKey) Then Payload.Add("fk", New JValue(Msg.FileKey))
         If Not String.IsNullOrEmpty(Msg.FileSha256) Then Payload.Add("fh", New JValue(Msg.FileSha256))
+        If Not String.IsNullOrEmpty(Msg.WorldName) Then Payload.Add("wn", New JValue(Msg.WorldName))
         If Not String.IsNullOrEmpty(Msg.GroupInviteId) Then Payload.Add("gi", New JValue(Msg.GroupInviteId))
         If Not String.IsNullOrEmpty(Msg.GroupInviteName) Then Payload.Add("gn", New JValue(Msg.GroupInviteName))
         If Not String.IsNullOrEmpty(Msg.GroupInviteSecret) Then Payload.Add("gk", New JValue(Msg.GroupInviteSecret))
@@ -830,6 +1075,7 @@ Public Module ModFriends
         Msg.FileUrl = If(Payload.Value(Of String)("fu"), "")
         Msg.FileKey = If(Payload.Value(Of String)("fk"), "")
         Msg.FileSha256 = If(Payload.Value(Of String)("fh"), "")
+        Msg.WorldName = If(Payload.Value(Of String)("wn"), "")
         Msg.GroupInviteId = If(Payload.Value(Of String)("gi"), "")
         Msg.GroupInviteName = If(Payload.Value(Of String)("gn"), "")
         Msg.GroupInviteSecret = If(Payload.Value(Of String)("gk"), "")
@@ -1349,8 +1595,9 @@ Public Module ModFriends
         If Url = "" Then Url = "https://ntfy.sh"
         If Not Url.Contains("://") Then Url = "https://" & Url
         Dim Parsed As Uri = Nothing
-        If Not Uri.TryCreate(Url, UriKind.Absolute, Parsed) OrElse (Parsed.Scheme <> Uri.UriSchemeHttp AndAlso Parsed.Scheme <> Uri.UriSchemeHttps) Then
-            Throw New ArgumentException("中继服务器地址必须为有效的 http/https URL！")
+        If Not Uri.TryCreate(Url, UriKind.Absolute, Parsed) OrElse (Parsed.Scheme <> Uri.UriSchemeHttp AndAlso Parsed.Scheme <> Uri.UriSchemeHttps) OrElse
+           Not String.IsNullOrEmpty(Parsed.UserInfo) Then
+            Throw New ArgumentException("中继服务器地址必须为有效的 http/https URL（不能含内嵌凭据）！")
         End If
         SyncLock DataLock
             GetData().RelayUrl = Url.TrimEnd("/"c)
